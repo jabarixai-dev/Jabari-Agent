@@ -1,0 +1,16 @@
+JABARI AGENT — V13 FULL RELEASE
+
+Replace these four files in your GitHub repository:
+
+1. src/App.tsx
+2. src/styles.css
+3. src/OutreachView.tsx
+4. netlify/functions/outreach.mts
+
+Keep all other existing files unchanged.
+
+V13 adds the Outreach workspace and API integration while preserving the existing CRM, Inbox, Calendar, Invoices and Products workspaces.
+
+It also fixes the existing InvoiceForm productId state issue.
+
+After replacing all four files, make ONE GitHub commit. Because main is connected to Netlify, that commit triggers the production deployment.
