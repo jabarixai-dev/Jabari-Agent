@@ -104,9 +104,9 @@ export default function App() {
 
       {active === "Command Center" && <DashboardView data={data} loading={loading} onNavigate={setActive}/>}
       {active === "Prospects" && <ProspectsView rows={filteredProspects} search={search} setSearch={setSearch} onConverted={loadAll}/>}
-      {active === "Contacts" && <ContactsView rows={filteredContacts} search={search} setSearch={setSearch} onAdd={()=>setModal("contact")} />}
-      {active === "Companies" && <CompaniesView rows={filteredCompanies} search={search} setSearch={setSearch} onAdd={()=>setModal("company")} />}
-      {active === "Leads" && <LeadsView rows={filteredLeads} search={search} setSearch={setSearch} onAdd={()=>setModal("lead")} />}
+      {active === "Contacts" && <ContactsView rows={filteredContacts} search={search} setSearch={setSearch} onAdd={()=>setModal("contact")} onOpen={(id)=>setSelectedRecord({kind:"contact",id})} />}
+      {active === "Companies" && <CompaniesView rows={filteredCompanies} search={search} setSearch={setSearch} onAdd={()=>setModal("company")} onOpen={(id)=>setSelectedRecord({kind:"company",id})} />}
+      {active === "Leads" && <LeadsView rows={filteredLeads} search={search} setSearch={setSearch} onAdd={()=>setModal("lead")} onOpen={(id)=>setSelectedRecord({kind:"lead",id})} onSaved={loadAll} />}
       {active === "Opportunities" && <OpportunitiesView rows={filteredOpportunities} search={search} setSearch={setSearch} onAdd={()=>setModal("opportunity")} onOpen={(id)=>setSelectedRecord({kind:"opportunity",id})} />}
       {active === "Pipeline" && <PipelineView rows={opportunities} onOpen={(id)=>setSelectedRecord({kind:"opportunity",id})} onStageChanged={loadAll}/>}
       {active === "Activity" && <ActivityView rows={filteredActivities} search={search} setSearch={setSearch}/>}
@@ -160,21 +160,23 @@ function DashboardView({data,loading,onNavigate}:{data:Dashboard;loading:boolean
   </div>;
 }
 
-function ContactsView({rows,search,setSearch,onAdd}:{rows:Contact[];search:string;setSearch:(v:string)=>void;onAdd:()=>void}) {
-  return <Workspace title="Contacts" subtitle="Every person in your CRM, connected to their company and lead history." search={search} setSearch={setSearch} addLabel="Add contact" onAdd={onAdd} count={rows.length}>
-    <Table headers={["Contact","Company","Source","Role","Added"]}>{rows.map(c=><tr key={c.id}><td><strong>{c.name}</strong><small>{c.email}</small></td><td>{c.company}</td><td><Badge text={c.source}/></td><td>{c.job_title || "—"}</td><td>{formatDate(c.created_at)}</td></tr>)}</Table>
+function ContactsView({rows,search,setSearch,onAdd,onOpen}:{rows:Contact[];search:string;setSearch:(v:string)=>void;onAdd:()=>void;onOpen:(id:string)=>void}) {
+  return <Workspace title="Contacts" subtitle="Every person in your CRM, connected to their company, lead history and activity." search={search} setSearch={setSearch} addLabel="Add contact" onAdd={onAdd} count={rows.length}>
+    <Table headers={["Contact","Company","Source","Role","Added","Action"]}>{rows.map(c=><tr key={c.id}><td><button className="link-btn" onClick={()=>onOpen(c.id)}><strong>{c.name}</strong><small>{c.email}</small></button></td><td>{c.company}</td><td><Badge text={c.source}/></td><td>{c.job_title || "—"}</td><td>{formatDate(c.created_at)}</td><td><button className="table-action" onClick={()=>onOpen(c.id)}>Open</button></td></tr>)}</Table>
     {!rows.length && <Empty text="No contacts match your search."/>}
   </Workspace>;
 }
-function CompaniesView({rows,search,setSearch,onAdd}:{rows:Company[];search:string;setSearch:(v:string)=>void;onAdd:()=>void}) {
+function CompaniesView({rows,search,setSearch,onAdd,onOpen}:{rows:Company[];search:string;setSearch:(v:string)=>void;onAdd:()=>void;onOpen:(id:string)=>void}) {
   return <Workspace title="Companies" subtitle="Accounts and organizations your team is prospecting, selling to, or serving." search={search} setSearch={setSearch} addLabel="Add company" onAdd={onAdd} count={rows.length}>
-    <Table headers={["Company","Industry","Website","Added"]}>{rows.map(c=><tr key={c.id}><td><strong>{c.name}</strong><small>{c.notes || "No notes"}</small></td><td>{c.industry || "—"}</td><td>{c.website || "—"}</td><td>{formatDate(c.created_at)}</td></tr>)}</Table>
+    <Table headers={["Company","Industry","Website","Added","Action"]}>{rows.map(c=><tr key={c.id}><td><button className="link-btn" onClick={()=>onOpen(c.id)}><strong>{c.name}</strong><small>{c.notes || "No notes"}</small></button></td><td>{c.industry || "—"}</td><td>{c.website || "—"}</td><td>{formatDate(c.created_at)}</td><td><button className="table-action" onClick={()=>onOpen(c.id)}>Open</button></td></tr>)}</Table>
     {!rows.length && <Empty text="No companies match your search."/>}
   </Workspace>;
 }
-function LeadsView({rows,search,setSearch,onAdd}:{rows:Lead[];search:string;setSearch:(v:string)=>void;onAdd:()=>void}) {
+function LeadsView({rows,search,setSearch,onAdd,onOpen,onSaved}:{rows:Lead[];search:string;setSearch:(v:string)=>void;onAdd:()=>void;onOpen:(id:string)=>void;onSaved:()=>Promise<void>}) {
+  const [busy,setBusy]=useState<string|null>(null);
+  const setStatus=async(id:string,status:string)=>{setBusy(id);try{const r=await fetch("/api/leads",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to update lead");await onSaved();}catch(e){alert(e instanceof Error?e.message:"Unable to update lead")}finally{setBusy(null)}};
   return <Workspace title="Leads" subtitle="Qualify inbound prospects and move them through the CRM lifecycle." search={search} setSearch={setSearch} addLabel="Add lead" onAdd={onAdd} count={rows.length}>
-    <Table headers={["Lead","Company","Status","Request","Budget","Timeline"]}>{rows.map(l=><tr key={l.id}><td><strong>{l.name}</strong><small>{l.email}</small></td><td>{l.company}</td><td><Badge text={l.status}/></td><td className="truncate">{l.request}</td><td>{l.budget}</td><td>{l.timeline}</td></tr>)}</Table>
+    <Table headers={["Lead","Company","Status","Request","Budget","Timeline","Action"]}>{rows.map(l=><tr key={l.id}><td><button className="link-btn" onClick={()=>onOpen(l.id)}><strong>{l.name}</strong><small>{l.email}</small></button></td><td>{l.company}</td><td><select className="inline-select" value={l.status} disabled={busy===l.id} onClick={e=>e.stopPropagation()} onChange={e=>setStatus(l.id,e.target.value)}>{["new","contacted","qualified","won","lost"].map(s=><option key={s}>{s}</option>)}</select></td><td className="truncate">{l.request}</td><td>{l.budget}</td><td>{l.timeline}</td><td><button className="table-action" onClick={()=>onOpen(l.id)}>Open</button></td></tr>)}</Table>
     {!rows.length && <Empty text="No leads match your search."/>}
   </Workspace>;
 }
@@ -222,13 +224,29 @@ function messagePreview(value:unknown) {
 function formatDateTime(value:number) { return new Date(Number(value)).toLocaleString(); }
 
 function RecordDrawer({kind,id,contacts,companies,leads,opportunities,activities,appointments,onClose,onRefresh}:{kind:string;id:string;contacts:Contact[];companies:Company[];leads:Lead[];opportunities:Opportunity[];activities:Activity[];appointments:Appointment[];onClose:()=>void;onRefresh:()=>Promise<void>}) {
-  const opportunity=opportunities.find(o=>o.id===id); const contact=contacts.find(c=>c.id===id); const company=companies.find(c=>c.id===id); const lead=leads.find(l=>l.id===id);
+  const opportunity=kind==="opportunity" ? opportunities.find(o=>o.id===id) : undefined;
+  const contact=kind==="contact" ? contacts.find(c=>c.id===id) : undefined;
+  const company=kind==="company" ? companies.find(c=>c.id===id) : undefined;
+  const lead=kind==="lead" ? leads.find(l=>l.id===id) : undefined;
   const record=opportunity||contact||company||lead; if(!record) return null;
-  const relatedActivities=activities.filter(a=>a.contact_id===id||a.lead_id===id); const relatedAppointments=appointments.filter(a=>a.contact_id===id||a.lead_id===id);
-  const title=(record as any).name || "Record"; const subtitle=kind==="opportunity" ? `${(record as Opportunity).stage} · ${formatMoney((record as Opportunity).value)}` : ((record as any).email || (record as any).company || "CRM record");
-  return <div className="drawer-backdrop" onClick={onClose}><aside className="record-drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">CRM RECORD</p><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-btn" onClick={onClose}>×</button></div><div className="drawer-actions"><button className="ghost-btn">Add note</button><button className="primary-btn" onClick={onRefresh}>Refresh</button></div><div className="record-summary"><div><span>Type</span><strong>{kind}</strong></div><div><span>Status</span><strong>{(record as any).status || (record as any).stage || "active"}</strong></div>{kind==="opportunity"&&<div><span>Probability</span><strong>{(record as Opportunity).probability}%</strong></div>}</div><section className="drawer-section"><h3>Related records</h3><div className="related-grid">{opportunity&&<div><span>Lead</span><strong>{opportunity.lead_name || opportunity.lead_id}</strong></div>}{opportunity&&<div><span>Company</span><strong>{opportunity.company_name || opportunity.company_id || "—"}</strong></div>}{contact&&<div><span>Company</span><strong>{contact.company}</strong></div>}{lead&&<div><span>Request</span><strong>{lead.request}</strong></div>}</div></section><section className="drawer-section"><h3>Timeline</h3>{[...relatedActivities.map(a=>({date:a.created_at,title:a.title,detail:a.detail,type:a.type})),...relatedAppointments.map(a=>({date:a.start_at,title:a.title,detail:a.description,type:"appointment"}))].sort((a,b)=>b.date-a.date).map((item,i)=><div className="drawer-timeline" key={i}><span className="timeline-dot"/><div><strong>{item.title}</strong><small>{item.type} · {new Date(item.date).toLocaleString()}</small><p>{item.detail || "No details"}</p></div></div>)}{!relatedActivities.length&&!relatedAppointments.length&&<Empty text="No related activity yet."/>}</section></aside></div>;
+  const relatedContactIds=company ? contacts.filter(c=>c.company_id===id || c.company===company.name).map(c=>c.id) : contact ? [contact.id] : opportunity?.contact_id ? [opportunity.contact_id] : [];
+  const relatedLeadIds=company ? leads.filter(l=>l.company===company.name).map(l=>l.id) : lead ? [lead.id] : opportunity?.lead_id ? [opportunity.lead_id] : [];
+  const relatedActivities=activities.filter(a=>relatedContactIds.includes(a.contact_id||"")||relatedLeadIds.includes(a.lead_id||""));
+  const relatedAppointments=appointments.filter(a=>relatedContactIds.includes(a.contact_id||"")||relatedLeadIds.includes(a.lead_id||""));
+  const relatedOpps=opportunities.filter(o=>o.id!==opportunity?.id && (relatedLeadIds.includes(o.lead_id)||relatedContactIds.includes(o.contact_id||"")|| (company && o.company_id===company.id)));
+  const title=(record as any).name || "Record";
+  const subtitle=kind==="opportunity" ? `${(record as Opportunity).stage} · ${formatMoney((record as Opportunity).value)}` : ((record as any).email || (record as any).website || (record as any).company || "CRM record");
+  const [note,setNote]=useState(""); const [saving,setSaving]=useState(false);
+  const addNote=async()=>{const targetContact=contact?.id || opportunity?.contact_id || relatedContactIds[0]; const targetLead=lead?.id || opportunity?.lead_id || relatedLeadIds[0]; if(!note.trim() || (!targetContact&&!targetLead)) return; setSaving(true); try{const r=await fetch("/api/activities",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contact_id:targetContact,lead_id:targetLead,type:"note",title:"CRM note",detail:note.trim()})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to add note");setNote("");await onRefresh();}catch(e){alert(e instanceof Error?e.message:"Unable to add note")}finally{setSaving(false)}};
+  return <div className="drawer-backdrop" onClick={onClose}><aside className="record-drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">CRM RECORD / {kind.toUpperCase()}</p><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-btn" onClick={onClose}>×</button></div>
+    <div className="drawer-actions"><button className="primary-btn" onClick={onRefresh}>Refresh</button></div>
+    <div className="record-summary"><div><span>Type</span><strong>{kind}</strong></div><div><span>Status</span><strong>{(record as any).status || (record as any).stage || "active"}</strong></div>{opportunity&&<div><span>Probability</span><strong>{opportunity.probability}%</strong></div>}</div>
+    <section className="drawer-section"><h3>Record details</h3><div className="detail-grid">{Object.entries(record as Record<string,unknown>).filter(([k,v])=>!['id','created_at','updated_at','thread_id'].includes(k)&&v!==undefined&&v!==null&&v!=="").slice(0,14).map(([k,v])=><div key={k}><span>{k.replaceAll('_',' ')}</span><strong>{typeof v==='object'?JSON.stringify(v):String(v)}</strong></div>)}</div></section>
+    {(contact||company||lead||opportunity)&&<section className="drawer-section"><h3>Related CRM records</h3><div className="related-grid">{company&&<div><span>Contacts</span><strong>{relatedContactIds.length}</strong></div>}{company&&<div><span>Leads</span><strong>{relatedLeadIds.length}</strong></div>}{(contact||lead||opportunity)&&<div><span>Opportunities</span><strong>{relatedOpps.length + (opportunity?1:0)}</strong></div>}{opportunity&&<div><span>Lead</span><strong>{opportunity.lead_name || opportunity.lead_id}</strong></div>}</div></section>}
+    <section className="drawer-section"><div className="section-title-row"><h3>Add note</h3><small>Saved to CRM timeline</small></div><textarea className="note-input" value={note} onChange={e=>setNote(e.target.value)} placeholder="Write a note about this record…" rows={3}/><div className="note-actions"><button className="primary-btn" disabled={saving||!note.trim()||(!contact&&!lead&&!opportunity)} onClick={addNote}>{saving?"Saving…":"Add note"}</button></div></section>
+    <section className="drawer-section"><h3>Unified timeline</h3>{[...relatedActivities.map(a=>({date:a.created_at,title:a.title,detail:a.detail,type:a.type})),...relatedAppointments.map(a=>({date:a.start_at,title:a.title,detail:a.description,type:"appointment"}))].sort((a,b)=>b.date-a.date).map((item,i)=><div className="drawer-timeline" key={i}><span className="timeline-dot"/><div><strong>{item.title}</strong><small>{item.type} · {new Date(item.date).toLocaleString()}</small><p>{item.detail || "No details"}</p></div></div>)}{!relatedActivities.length&&!relatedAppointments.length&&<Empty text="No related activity yet."/>}</section>
+  </aside></div>;
 }
-
 
 
 function ProspectsView({rows,search,setSearch,onConverted}:{rows:Prospect[];search:string;setSearch:(v:string)=>void;onConverted:()=>Promise<void>}) {
