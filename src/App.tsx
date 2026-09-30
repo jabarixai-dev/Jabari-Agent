@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-const sections = ["Command Center", "Prospects", "Contacts", "Leads", "Companies", "Opportunities", "Pipeline", "Activity", "Appointments", "Tasks", "Campaigns", "Workflows", "Invoices", "Inbox"];
+const sections = ["Command Center", "Prospects", "Contacts", "Leads", "Companies", "Opportunities", "Pipeline", "Activity", "Appointments", "Tasks", "Campaigns", "Workflows", "Invoices", "Products", "Inbox"];
 
 type Contact = { id:string; name:string; email:string; company:string; phone?:string; source:string; job_title?:string; website?:string; notes?:string; company_id?:string; created_at:number };
 type Company = { id:string; name:string; website?:string; industry?:string; notes?:string; created_at:number };
@@ -14,6 +14,7 @@ type Appointment = { id:string; contact_id?:string; lead_id?:string; title:strin
 type Campaign = { id:string; name:string; description:string; status:string; created_at:number; updated_at:number; step_count:number; enrollment_count:number; active_count:number };
 type Workflow = { id:string; name:string; trigger:string; condition:string; action:string; action_value:string; steps?:unknown; goal?:string; enabled:boolean; created_at:number; updated_at:number; execution_count:number; active_count:number };
 type Task = { id:string; lead_id:string; title:string; detail:string; status:string; created_at:number; updated_at:number; lead_name?:string; lead_email?:string; lead_company?:string };
+type Product = { id:string; name:string; description:string; price:number; currency:string; status:string; created_at:number; updated_at:number };
 type Invoice = { id:string; number:string; customer_name:string; customer_email:string; contact_id?:string; lead_id?:string; opportunity_id?:string; status:string; currency:string; subtotal:number; total:number; due_at?:number; paid_at?:number; notes:string; created_at:number; updated_at:number; item_count:number; paid_amount:number };
 
 type Dashboard = {
@@ -41,16 +42,17 @@ export default function App() {
   const [workflows,setWorkflows] = useState<Workflow[]>([]);
   const [tasks,setTasks] = useState<Task[]>([]);
   const [invoices,setInvoices] = useState<Invoice[]>([]);
+  const [products,setProducts] = useState<Product[]>([]);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState("");
   const [search,setSearch] = useState("");
-  const [modal,setModal] = useState<"contact"|"company"|"lead"|"opportunity"|"campaign"|"workflow"|"task"|"invoice"|null>(null);
+  const [modal,setModal] = useState<"contact"|"company"|"lead"|"opportunity"|"campaign"|"workflow"|"task"|"invoice"|"product"|null>(null);
   const [selectedRecord,setSelectedRecord] = useState<{kind:string;id:string}|null>(null);
 
   const loadAll = async () => {
     setLoading(true); setError("");
     try {
-      const [dashboard,contactRows,companyRows,leadRows,opportunityRows,prospectRows,activityRows,appointmentRows,inboxRows,campaignRows,workflowRows,taskRows] = await Promise.all([
+      const [dashboard,contactRows,companyRows,leadRows,opportunityRows,prospectRows,activityRows,appointmentRows,inboxRows,campaignRows,workflowRows,taskRows,invoiceRows,productRows] = await Promise.all([
         getJson<Dashboard>("/api/dashboard"),
         getJson<{data:Contact[]}>("/api/contacts"),
         getJson<{data:Company[]}>("/api/companies"),
@@ -63,14 +65,15 @@ export default function App() {
         getJson<{data:Campaign[]}>("/api/campaigns"),
         getJson<{data:Workflow[]}>("/api/workflows"),
         getJson<{data:Task[]}>("/api/tasks"),
-        getJson<{data:Invoice[]}>("/api/invoices")
+        getJson<{data:Invoice[]}>("/api/invoices"),
+        getJson<{data:Product[]}>("/api/products")
       ]);
       setData(dashboard); setContacts(contactRows.data ?? []); setCompanies(companyRows.data ?? []);
       setLeads(leadRows.data ?? []); setOpportunities(opportunityRows.data ?? []);
       setProspects(prospectRows.data ?? []); setActivities(activityRows.data ?? []);
       setAppointments(appointmentRows.data ?? []);
       setInbox(inboxRows.data ?? []);
-      setCampaigns(campaignRows.data ?? []); setWorkflows(workflowRows.data ?? []); setTasks(taskRows.data ?? []); setInvoices(invoiceRows.data ?? []);
+      setCampaigns(campaignRows.data ?? []); setWorkflows(workflowRows.data ?? []); setTasks(taskRows.data ?? []); setInvoices(invoiceRows.data ?? []); setProducts(productRows.data ?? []);
     } catch(e) {
       setError(e instanceof Error ? e.message : "Unable to load CRM");
     } finally { setLoading(false); }
@@ -90,6 +93,7 @@ export default function App() {
   const filteredWorkflows = useMemo(() => filterRows(workflows, search, ["name","trigger","condition","action","goal"]), [workflows,search]);
   const filteredTasks = useMemo(() => filterRows(tasks, search, ["title","detail","status","lead_name","lead_email","lead_company"]), [tasks,search]);
   const filteredInvoices = useMemo(() => filterRows(invoices, search, ["number","customer_name","customer_email","status","currency"]), [invoices,search]);
+  const filteredProducts = useMemo(() => filterRows(products, search, ["name","description","status","currency"]), [products,search]);
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -121,6 +125,7 @@ export default function App() {
       {active === "Campaigns" && <CampaignsView rows={filteredCampaigns} search={search} setSearch={setSearch} onAdd={()=>setModal("campaign")} />}
       {active === "Workflows" && <WorkflowsView rows={filteredWorkflows} search={search} setSearch={setSearch} onSaved={loadAll} onAdd={()=>setModal("workflow")} />}
       {active === "Invoices" && <InvoicesView rows={filteredInvoices} search={search} setSearch={setSearch} onAdd={()=>setModal("invoice")} onSaved={loadAll}/>}
+      {active === "Products" && <ProductsView rows={filteredProducts} search={search} setSearch={setSearch} onAdd={()=>setModal("product")} onSaved={loadAll}/>}
 
       {modal === "company" && <CompanyForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "contact" && <ContactForm companies={companies} onClose={()=>setModal(null)} onSaved={loadAll}/>}
@@ -129,7 +134,8 @@ export default function App() {
       {modal === "campaign" && <CampaignForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "workflow" && <WorkflowForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "task" && <TaskForm leads={leads} onClose={()=>setModal(null)} onSaved={loadAll}/>}
-      {modal === "invoice" && <InvoiceForm contacts={contacts} leads={leads} opportunities={opportunities} onClose={()=>setModal(null)} onSaved={loadAll}/>}
+      {modal === "invoice" && <InvoiceForm contacts={contacts} leads={leads} opportunities={opportunities} products={products} onClose={()=>setModal(null)} onSaved={loadAll}/>}
+      {modal === "product" && <ProductForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {selectedRecord && <RecordDrawer kind={selectedRecord.kind} id={selectedRecord.id} contacts={contacts} companies={companies} leads={leads} opportunities={opportunities} activities={activities} appointments={appointments} onClose={()=>setSelectedRecord(null)} onRefresh={loadAll}/>}
     </main>
   </div>;
@@ -408,11 +414,25 @@ function InvoicesView({rows,search,setSearch,onAdd,onSaved}:{rows:Invoice[];sear
   </Workspace>;
 }
 
-function InvoiceForm({contacts,leads,opportunities,onClose,onSaved}:{contacts:Contact[];leads:Lead[];opportunities:Opportunity[];onClose:()=>void;onSaved:()=>Promise<void>}) {
+function ProductsView({rows,search,setSearch,onAdd,onSaved}:{rows:Product[];search:string;setSearch:(v:string)=>void;onAdd:()=>void;onSaved:()=>Promise<void>}) {
+  const archive=async(id:string)=>{const r=await fetch("/api/products",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status:"archived"})});if(r.ok) await onSaved();};
+  return <Workspace title="Products" subtitle="Manage reusable services and products for invoices and future checkout flows." search={search} setSearch={setSearch} addLabel="Add product" onAdd={onAdd} count={rows.length}>
+    <Table headers={["Product","Price","Currency","Status","Created","Actions"]}>{rows.map(p=><tr key={p.id}><td><strong>{p.name}</strong><small>{p.description || "No description"}</small></td><td><strong>{formatMoney(Number(p.price))}</strong></td><td>{p.currency}</td><td><Badge text={p.status}/></td><td>{formatDate(p.created_at)}</td><td>{p.status!=="archived"?<button className="table-action" onClick={()=>archive(p.id)}>Archive</button>:<span className="muted">Archived</span>}</td></tr>)}</Table>
+    {!rows.length && <Empty text="No products yet. Add reusable services or products for your invoices."/>}
+  </Workspace>;
+}
+
+function ProductForm({onClose,onSaved}:{onClose:()=>void;onSaved:()=>Promise<void>}) {
+  const [name,setName]=useState(""); const [description,setDescription]=useState(""); const [price,setPrice]=useState(""); const [currency,setCurrency]=useState("NGN"); const [error,setError]=useState(""); const [saving,setSaving]=useState(false);
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{const r=await fetch("/api/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,description,price:Number(price)||0,currency})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create product");await onSaved();onClose();}catch(x){setError(x instanceof Error?x.message:"Unable to create product")}finally{setSaving(false)}};
+  return <Modal title="Add product" onClose={onClose}><form onSubmit={submit}><div className="form-grid"><Field label="Name" name="name" value={name} onChange={setName} placeholder="Website package"/><Field label="Price" name="price" value={price} onChange={setPrice} type="number"/><label className="field"><span>Currency</span><select value={currency} onChange={e=>setCurrency(e.target.value)}><option>NGN</option><option>USD</option><option>GBP</option><option>EUR</option></select></label></div><Textarea label="Description" value={description} onChange={setDescription} required={false}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
+}
+
+function InvoiceForm({contacts,leads,opportunities,products,onClose,onSaved}:{contacts:Contact[];leads:Lead[];opportunities:Opportunity[];products:Product[];onClose:()=>void;onSaved:()=>Promise<void>}) {
   const [customerName,setCustomerName]=useState(""); const [customerEmail,setCustomerEmail]=useState(""); const [contactId,setContactId]=useState(""); const [leadId,setLeadId]=useState(""); const [opportunityId,setOpportunityId]=useState(""); const [currency,setCurrency]=useState("NGN"); const [description,setDescription]=useState("Service"); const [quantity,setQuantity]=useState("1"); const [unitPrice,setUnitPrice]=useState("0"); const [dueAt,setDueAt]=useState(""); const [notes,setNotes]=useState(""); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
-  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{const r=await fetch("/api/invoices",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer_name:customerName,customer_email:customerEmail,contact_id:contactId||undefined,lead_id:leadId||undefined,opportunity_id:opportunityId||undefined,currency,items:[{description,quantity:Number(quantity)||1,unit_price:Number(unitPrice)||0}],due_at:dueAt?new Date(dueAt+"T23:59:59").getTime():undefined,notes})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create invoice");await onSaved();onClose();}catch(x){setError(x instanceof Error?x.message:"Unable to create invoice")}finally{setSaving(false)}};
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{const r=await fetch("/api/invoices",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer_name:customerName,customer_email:customerEmail,contact_id:contactId||undefined,lead_id:leadId||undefined,opportunity_id:opportunityId||undefined,currency,items:[{description,quantity:Number(quantity)||1,unit_price:Number(unitPrice)||0,product_id:productId||undefined}],due_at:dueAt?new Date(dueAt+"T23:59:59").getTime():undefined,notes})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create invoice");await onSaved();onClose();}catch(x){setError(x instanceof Error?x.message:"Unable to create invoice")}finally{setSaving(false)}};
   const pickContact=(id:string)=>{setContactId(id);const c=contacts.find(x=>x.id===id);if(c){setCustomerName(c.name);setCustomerEmail(c.email)}};
-  return <Modal title="Create invoice" onClose={onClose}><form onSubmit={submit}><div className="form-grid"><label className="field"><span>Contact</span><select value={contactId} onChange={e=>pickContact(e.target.value)}><option value="">Manual customer</option>{contacts.map(c=><option value={c.id} key={c.id}>{c.name} · {c.email}</option>)}</select></label><Field label="Customer name" name="customer_name" value={customerName} onChange={setCustomerName} placeholder="Client name"/><Field label="Customer email" name="customer_email" value={customerEmail} onChange={setCustomerEmail} placeholder="client@example.com" type="email"/><label className="field"><span>Currency</span><select value={currency} onChange={e=>setCurrency(e.target.value)}><option>NGN</option><option>USD</option><option>GBP</option><option>EUR</option></select></label></div><div className="form-grid"><Field label="Line item" name="description" value={description} onChange={setDescription} placeholder="Website project"/><Field label="Quantity" name="quantity" value={quantity} onChange={setQuantity} type="number"/><Field label="Unit price" name="unitPrice" value={unitPrice} onChange={setUnitPrice} type="number"/><Field label="Due date" name="dueAt" value={dueAt} onChange={setDueAt} type="date" required={false}/></div><div className="form-grid"><label className="field"><span>Lead</span><select value={leadId} onChange={e=>setLeadId(e.target.value)}><option value="">None</option>{leads.map(l=><option value={l.id} key={l.id}>{l.name} · {l.company}</option>)}</select></label><label className="field"><span>Opportunity</span><select value={opportunityId} onChange={e=>setOpportunityId(e.target.value)}><option value="">None</option>{opportunities.map(o=><option value={o.id} key={o.id}>{o.name}</option>)}</select></label></div><Textarea label="Notes" value={notes} onChange={setNotes} required={false}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
+  return <Modal title="Create invoice" onClose={onClose}><form onSubmit={submit}><div className="form-grid"><label className="field"><span>Contact</span><select value={contactId} onChange={e=>pickContact(e.target.value)}><option value="">Manual customer</option>{contacts.map(c=><option value={c.id} key={c.id}>{c.name} · {c.email}</option>)}</select></label><Field label="Customer name" name="customer_name" value={customerName} onChange={setCustomerName} placeholder="Client name"/><Field label="Customer email" name="customer_email" value={customerEmail} onChange={setCustomerEmail} placeholder="client@example.com" type="email"/><label className="field"><span>Currency</span><select value={currency} onChange={e=>setCurrency(e.target.value)}><option>NGN</option><option>USD</option><option>GBP</option><option>EUR</option></select></label></div><div className="form-grid"><label className="field"><span>Product</span><select value={productId} onChange={e=>{const id=e.target.value;setProductId(id);const p=products.find(x=>x.id===id);if(p){setDescription(p.name);setUnitPrice(String(p.price));setCurrency(p.currency);}}}><option value="">Custom line item</option>{products.filter(p=>p.status!=="archived").map(p=><option value={p.id} key={p.id}>{p.name} · {formatCurrency(p.price,p.currency)}</option>)}</select></label><Field label="Line item" name="description" value={description} onChange={setDescription} placeholder="Website project"/><Field label="Quantity" name="quantity" value={quantity} onChange={setQuantity} type="number"/><Field label="Unit price" name="unitPrice" value={unitPrice} onChange={setUnitPrice} type="number"/><Field label="Due date" name="dueAt" value={dueAt} onChange={setDueAt} type="date" required={false}/></div><div className="form-grid"><label className="field"><span>Lead</span><select value={leadId} onChange={e=>setLeadId(e.target.value)}><option value="">None</option>{leads.map(l=><option value={l.id} key={l.id}>{l.name} · {l.company}</option>)}</select></label><label className="field"><span>Opportunity</span><select value={opportunityId} onChange={e=>setOpportunityId(e.target.value)}><option value="">None</option>{opportunities.map(o=><option value={o.id} key={o.id}>{o.name}</option>)}</select></label></div><Textarea label="Notes" value={notes} onChange={setNotes} required={false}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
 }
 
 function Workspace({title,subtitle,search,setSearch,addLabel,onAdd,count,children}:{title:string;subtitle:string;search:string;setSearch:(v:string)=>void;addLabel?:string;onAdd?:()=>void;count:number;children:ReactNode}) {
@@ -434,7 +454,7 @@ function Badge({text}:{text:string}) { return <span className="badge">{text || "
 function formatMoney(value:number) { return new Intl.NumberFormat(undefined,{style:"currency",currency:"NGN",maximumFractionDigits:0}).format(value || 0); }
 function formatCurrency(value:number,currency:string) { return new Intl.NumberFormat(undefined,{style:"currency",currency:currency||"NGN",maximumFractionDigits:0}).format(value || 0); }
 function formatDate(value:number) { return value ? new Date(value).toLocaleDateString() : "—"; }
-function navIcon(s:string) { const icons:Record<string,string>={ "Command Center":"⌂",Prospects:"◌",Contacts:"◎",Leads:"◈",Companies:"▦",Opportunities:"◇",Pipeline:"▥",Activity:"⌁",Appointments:"◷",Tasks:"✓",Campaigns:"◉",Workflows:"⌘",Invoices:"▤",Inbox:"✉" }; return icons[s] || "•"; }
+function navIcon(s:string) { const icons:Record<string,string>={ "Command Center":"⌂",Prospects:"◌",Contacts:"◎",Leads:"◈",Companies:"▦",Opportunities:"◇",Pipeline:"▥",Activity:"⌁",Appointments:"◷",Tasks:"✓",Campaigns:"◉",Workflows:"⌘",Invoices:"▤",Products:"◫",Inbox:"✉" }; return icons[s] || "•"; }
 
 function Modal({title,children,onClose}:{title:string;children:ReactNode;onClose:()=>void}) {
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><div><p className="eyebrow">JABARI CRM</p><h3>{title}</h3></div><button className="close-btn" onClick={onClose}>×</button></div>{children}</div></div>;
