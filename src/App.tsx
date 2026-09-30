@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-const sections = ["Command Center", "Contacts", "Leads", "Companies", "Opportunities", "Tasks", "Campaigns", "Workflows", "Appointments", "Invoices", "Inbox"];
+const sections = ["Command Center", "Prospects", "Contacts", "Leads", "Companies", "Opportunities", "Activity", "Appointments", "Tasks", "Campaigns", "Workflows", "Invoices", "Inbox"];
 
 type Contact = { id:string; name:string; email:string; company:string; phone?:string; source:string; job_title?:string; website?:string; notes?:string; company_id?:string; created_at:number };
 type Company = { id:string; name:string; website?:string; industry?:string; notes?:string; created_at:number };
 type Lead = { id:string; thread_id:string; name:string; email:string; company:string; request:string; budget:string; timeline:string; status:string; created_at:number };
 type Opportunity = { id:string; lead_id:string; contact_id?:string; company_id?:string; name:string; stage:string; value:number; probability:number; expected_close_at?:number; owner:string; notes:string; company_name?:string; lead_name?:string; created_at:number };
+type Prospect = { id:string; name:string; url:string; snippet:string; source:string; status:string; target_service:string; target_niche:string; target_location:string; qualification_status:string; qualification_reason:string; website_status:string; contact_name?:string; contact_email?:string; contact_phone?:string; fit_reason?:string; pain_point?:string; outreach_subject?:string; analysis_status:string; contact_status:string; contact_source?:string; website_found?:boolean; created_at:number; updated_at:number };
+type Activity = { id:string; contact_id?:string; lead_id?:string; type:string; title:string; detail:string; created_at:number; contact_name?:string; lead_name?:string };
+type Appointment = { id:string; contact_id?:string; lead_id?:string; title:string; description:string; start_at:number; end_at:number; status:string; location:string; meeting_url?:string; contact_name?:string; lead_name?:string; created_at:number };
+
 type Dashboard = {
   metrics:{contacts:number;openLeads:number;openOpportunities:number;tasksDue:number};
   recentContacts:Array<{id:string;first_name:string;last_name?:string;email?:string;job_title?:string}>;
@@ -23,6 +27,9 @@ export default function App() {
   const [companies,setCompanies] = useState<Company[]>([]);
   const [leads,setLeads] = useState<Lead[]>([]);
   const [opportunities,setOpportunities] = useState<Opportunity[]>([]);
+  const [prospects,setProspects] = useState<Prospect[]>([]);
+  const [activities,setActivities] = useState<Activity[]>([]);
+  const [appointments,setAppointments] = useState<Appointment[]>([]);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState("");
   const [search,setSearch] = useState("");
@@ -31,15 +38,20 @@ export default function App() {
   const loadAll = async () => {
     setLoading(true); setError("");
     try {
-      const [dashboard,contactRows,companyRows,leadRows,opportunityRows] = await Promise.all([
+      const [dashboard,contactRows,companyRows,leadRows,opportunityRows,prospectRows,activityRows,appointmentRows] = await Promise.all([
         getJson<Dashboard>("/api/dashboard"),
         getJson<{data:Contact[]}>("/api/contacts"),
         getJson<{data:Company[]}>("/api/companies"),
         getJson<{data:Lead[]}>("/api/leads"),
-        getJson<{data:Opportunity[]}>("/api/opportunities")
+        getJson<{data:Opportunity[]}>("/api/opportunities"),
+        getJson<{data:Prospect[]}>("/api/prospects"),
+        getJson<{data:Activity[]}>("/api/activities"),
+        getJson<{data:Appointment[]}>("/api/appointments")
       ]);
       setData(dashboard); setContacts(contactRows.data ?? []); setCompanies(companyRows.data ?? []);
       setLeads(leadRows.data ?? []); setOpportunities(opportunityRows.data ?? []);
+      setProspects(prospectRows.data ?? []); setActivities(activityRows.data ?? []);
+      setAppointments(appointmentRows.data ?? []);
     } catch(e) {
       setError(e instanceof Error ? e.message : "Unable to load CRM");
     } finally { setLoading(false); }
@@ -51,6 +63,9 @@ export default function App() {
   const filteredCompanies = useMemo(() => filterRows(companies, search, ["name","industry","website"]), [companies,search]);
   const filteredLeads = useMemo(() => filterRows(leads, search, ["name","email","company","status","request"]), [leads,search]);
   const filteredOpportunities = useMemo(() => filterRows(opportunities, search, ["name","stage","owner","company_name","lead_name"]), [opportunities,search]);
+  const filteredProspects = useMemo(() => filterRows(prospects, search, ["name","source","status","qualification_status","contact_name","contact_email","target_niche","target_location"]), [prospects,search]);
+  const filteredActivities = useMemo(() => filterRows(activities, search, ["type","title","detail","contact_name","lead_name"]), [activities,search]);
+  const filteredAppointments = useMemo(() => filterRows(appointments, search, ["title","status","location","contact_name","lead_name"]), [appointments,search]);
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -69,11 +84,14 @@ export default function App() {
       {error && <div className="error-card">{error}<button onClick={loadAll}>Retry</button></div>}
 
       {active === "Command Center" && <DashboardView data={data} loading={loading} onNavigate={setActive}/>}
+      {active === "Prospects" && <ProspectsView rows={filteredProspects} search={search} setSearch={setSearch} onConverted={loadAll}/>}
       {active === "Contacts" && <ContactsView rows={filteredContacts} search={search} setSearch={setSearch} onAdd={()=>setModal("contact")} />}
       {active === "Companies" && <CompaniesView rows={filteredCompanies} search={search} setSearch={setSearch} onAdd={()=>setModal("company")} />}
       {active === "Leads" && <LeadsView rows={filteredLeads} search={search} setSearch={setSearch} onAdd={()=>setModal("lead")} />}
       {active === "Opportunities" && <OpportunitiesView rows={filteredOpportunities} search={search} setSearch={setSearch} onAdd={()=>setModal("opportunity")} />}
-      {["Tasks","Campaigns","Workflows","Appointments","Invoices","Inbox"].includes(active) &&
+      {active === "Activity" && <ActivityView rows={filteredActivities} search={search} setSearch={setSearch}/>}
+      {active === "Appointments" && <AppointmentsView rows={filteredAppointments} search={search} setSearch={setSearch} contacts={contacts} leads={leads} onSaved={loadAll}/>}
+      {["Tasks","Campaigns","Workflows","Invoices","Inbox"].includes(active) &&
         <section className="coming-card"><div className="coming-icon">✦</div><p className="eyebrow">{active.toUpperCase()}</p><h2>{active} workspace</h2><p>The CRM foundation is ready. This module will plug into the unified workspace instead of becoming a separate disconnected screen.</p><div className="coming-meta">Connected to Neon · Netlify Functions · Jabari CRM</div></section>}
 
       {modal === "company" && <CompanyForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
@@ -139,6 +157,58 @@ function OpportunitiesView({rows,search,setSearch,onAdd}:{rows:Opportunity[];sea
   </Workspace>;
 }
 
+
+function ProspectsView({rows,search,setSearch,onConverted}:{rows:Prospect[];search:string;setSearch:(v:string)=>void;onConverted:()=>Promise<void>}) {
+  const [busy,setBusy]=useState<string|null>(null); const [message,setMessage]=useState("");
+  const convert=async(p:Prospect)=>{
+    if(!p.contact_email){setMessage("This prospect has no contact email.");return}
+    setBusy(p.id);setMessage("");
+    try{
+      const r=await fetch("/api/prospects/convert",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prospect_id:p.id,company:p.name,source:"prospecting",notes:[p.pain_point,p.fit_reason].filter(Boolean).join(" · ")})});
+      const b=await r.json(); if(!r.ok) throw new Error(b.error||"Conversion failed");
+      await onConverted(); setMessage(`${p.name} is now in Contacts.`);
+    }catch(e){setMessage(e instanceof Error?e.message:"Conversion failed")}finally{setBusy(null)}
+  };
+  return <Workspace title="Prospects" subtitle="Your prospecting layer: qualify, review contact evidence, then push good prospects into the CRM." search={search} setSearch={setSearch} addLabel="" onAdd={()=>{}} count={rows.length}>
+    {message && <div className="info-note">{message}</div>}
+    <Table headers={["Prospect","Qualification","Contact","Pain point","Source","Action"]}>{rows.map(p=><tr key={p.id}>
+      <td><strong>{p.name}</strong><small>{p.target_niche || "General"} · {p.target_location || "—"}</small></td>
+      <td><Badge text={p.qualification_status}/><small>{p.qualification_reason || "No qualification note"}</small></td>
+      <td><strong>{p.contact_name || "Unknown"}</strong><small>{p.contact_email || "No email"}</small></td>
+      <td className="truncate">{p.pain_point || p.fit_reason || p.snippet || "—"}</td>
+      <td>{p.source || "—"}</td>
+      <td>{p.contact_status==="converted" ? <Badge text="converted"/> : <button className="table-action" disabled={busy===p.id || !p.contact_email} onClick={()=>convert(p)}>{busy===p.id?"Converting…":"Convert to contact"}</button>}</td>
+    </tr>)}</Table>
+    {!rows.length && <Empty text="No prospects match your search."/>}
+  </Workspace>;
+}
+
+function ActivityView({rows,search,setSearch}:{rows:Activity[];search:string;setSearch:(v:string)=>void}) {
+  return <Workspace title="Activity" subtitle="A unified timeline for the actions and events already captured by Jabari CRM." search={search} setSearch={setSearch} addLabel="" onAdd={()=>{}} count={rows.length}>
+    <div className="timeline">{rows.map(a=><div className="timeline-item" key={a.id}><div className="timeline-dot"/><div><div className="timeline-title"><strong>{a.title}</strong><span>{new Date(a.created_at).toLocaleString()}</span></div><p>{a.detail}</p><small>{a.type}{a.contact_name ? ` · ${a.contact_name}` : ""}{a.lead_name ? ` · ${a.lead_name}` : ""}</small></div></div>)}</div>
+    {!rows.length && <Empty text="No CRM activity yet. Conversions and future CRM actions will appear here."/>}
+  </Workspace>;
+}
+
+function AppointmentsView({rows,search,setSearch,contacts,leads,onSaved}:{rows:Appointment[];search:string;setSearch:(v:string)=>void;contacts:Contact[];leads:Lead[];onSaved:()=>Promise<void>}) {
+  const [show,setShow]=useState(false);
+  return <><Workspace title="Appointments" subtitle="Keep scheduled conversations connected to the people and leads they belong to." search={search} setSearch={setSearch} addLabel="Add appointment" onAdd={()=>setShow(true)} count={rows.length}>
+    <Table headers={["Appointment","Contact / Lead","When","Status","Location"]}>{rows.map(a=><tr key={a.id}><td><strong>{a.title}</strong><small>{a.description || "No description"}</small></td><td>{a.contact_name || a.lead_name || "Unlinked"}</td><td>{new Date(a.start_at).toLocaleString()}<small>to {new Date(a.end_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></td><td><Badge text={a.status}/></td><td>{a.location}</td></tr>)}</Table>
+    {!rows.length && <Empty text="No appointments scheduled."/>}
+  </Workspace>{show&&<AppointmentForm contacts={contacts} leads={leads} onClose={()=>setShow(false)} onSaved={async()=>{await onSaved();setShow(false)}}/>}</>;
+}
+
+function AppointmentForm({contacts,leads,onClose,onSaved}:{contacts:Contact[];leads:Lead[];onClose:()=>void;onSaved:()=>Promise<void>}) {
+  const [title,setTitle]=useState(""); const [description,setDescription]=useState(""); const [contactId,setContactId]=useState(""); const [leadId,setLeadId]=useState("");
+  const [start,setStart]=useState(""); const [end,setEnd]=useState(""); const [location,setLocation]=useState("online"); const [status,setStatus]=useState("scheduled"); const [meetingUrl,setMeetingUrl]=useState(""); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{
+    const startAt=new Date(start).getTime(), endAt=new Date(end).getTime();
+    const r=await fetch("/api/appointments",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,description,contact_id:contactId||undefined,lead_id:leadId||undefined,start_at:startAt,end_at:endAt,status,location,meeting_url:meetingUrl||undefined})});
+    const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create appointment");await onSaved();
+  }catch(x){setError(x instanceof Error?x.message:"Unable to create appointment")}finally{setSaving(false)}};
+  return <Modal title="Add appointment" onClose={onClose}><form onSubmit={submit}><div className="form-grid"><Field label="Title" name="title" value={title} onChange={setTitle} placeholder="Discovery call"/><label className="field"><span>Contact</span><select value={contactId} onChange={e=>setContactId(e.target.value)}><option value="">None</option>{contacts.map(c=><option value={c.id} key={c.id}>{c.name} · {c.company}</option>)}</select></label><label className="field"><span>Lead</span><select value={leadId} onChange={e=>setLeadId(e.target.value)}><option value="">None</option>{leads.map(l=><option value={l.id} key={l.id}>{l.name} · {l.company}</option>)}</select></label><Field label="Location" name="location" value={location} onChange={setLocation} placeholder="online"/><Field label="Start" name="start" value={start} onChange={setStart} type="datetime-local"/><Field label="End" name="end" value={end} onChange={setEnd} type="datetime-local"/><label className="field"><span>Status</span><select value={status} onChange={e=>setStatus(e.target.value)}><option>scheduled</option><option>confirmed</option><option>completed</option><option>cancelled</option></select></label><Field label="Meeting URL" name="meeting_url" value={meetingUrl} onChange={setMeetingUrl} placeholder="https://…" required={false}/></div><Textarea label="Description" value={description} onChange={setDescription} required={false}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
+}
+
 function Workspace({title,subtitle,search,setSearch,addLabel,onAdd,count,children}:{title:string;subtitle:string;search:string;setSearch:(v:string)=>void;addLabel:string;onAdd:()=>void;count:number;children:ReactNode}) {
   return <section className="workspace">
     <div className="workspace-head"><div><p className="eyebrow">CRM / {title.toUpperCase()}</p><h2>{title}</h2><p>{subtitle}</p></div><button className="primary-btn" onClick={onAdd}>+ {addLabel}</button></div>
@@ -157,7 +227,7 @@ function Empty({text}:{text:string}) { return <div className="empty">{text}</div
 function Badge({text}:{text:string}) { return <span className="badge">{text || "—"}</span>; }
 function formatMoney(value:number) { return new Intl.NumberFormat(undefined,{style:"currency",currency:"NGN",maximumFractionDigits:0}).format(value || 0); }
 function formatDate(value:number) { return value ? new Date(value).toLocaleDateString() : "—"; }
-function navIcon(s:string) { const icons:Record<string,string>={ "Command Center":"⌂",Contacts:"◎",Leads:"◈",Companies:"▦",Opportunities:"◇",Tasks:"✓",Campaigns:"◉",Workflows:"⌘",Appointments:"◷",Invoices:"▤",Inbox:"✉" }; return icons[s] || "•"; }
+function navIcon(s:string) { const icons:Record<string,string>={ "Command Center":"⌂",Prospects:"◌",Contacts:"◎",Leads:"◈",Companies:"▦",Opportunities:"◇",Activity:"⌁",Appointments:"◷",Tasks:"✓",Campaigns:"◉",Workflows:"⌘",Invoices:"▤",Inbox:"✉" }; return icons[s] || "•"; }
 
 function Modal({title,children,onClose}:{title:string;children:ReactNode;onClose:()=>void}) {
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><div><p className="eyebrow">JABARI CRM</p><h3>{title}</h3></div><button className="close-btn" onClick={onClose}>×</button></div>{children}</div></div>;
