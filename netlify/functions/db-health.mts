@@ -1,5 +1,5 @@
 import type { Config } from '@netlify/functions';
-import { sql } from './lib/db.mts';
+import { sql } from './lib/db';
 
 export default async function () {
   try {
