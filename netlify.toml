@@ -4,3 +4,8 @@
 
 [functions]
   directory = "netlify/functions"
+
+[[redirects]]
+  from = "/api/outreach"
+  to = "/.netlify/functions/outreach"
+  status = 200
