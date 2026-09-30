@@ -344,9 +344,9 @@ function TaskForm({leads,onClose,onSaved}:{leads:Lead[];onClose:()=>void;onSaved
   return <Modal title="Add task" onClose={onClose}><form onSubmit={submit}><label className="field"><span>Lead *</span><select required value={leadId} onChange={e=>setLeadId(e.target.value)}><option value="">Select lead</option>{leads.map(l=><option key={l.id} value={l.id}>{l.name} · {l.company}</option>)}</select></label><Field label="Task title" name="title" value={title} onChange={setTitle} placeholder="Send proposal"/><Textarea label="Details" value={detail} onChange={setDetail}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
 }
 
-function Workspace({title,subtitle,search,setSearch,addLabel,onAdd,count,children}:{title:string;subtitle:string;search:string;setSearch:(v:string)=>void;addLabel:string;onAdd:()=>void;count:number;children:ReactNode}) {
+function Workspace({title,subtitle,search,setSearch,addLabel,onAdd,count,children}:{title:string;subtitle:string;search:string;setSearch:(v:string)=>void;addLabel?:string;onAdd?:()=>void;count:number;children:ReactNode}) {
   return <section className="workspace">
-    <div className="workspace-head"><div><p className="eyebrow">CRM / {title.toUpperCase()}</p><h2>{title}</h2><p>{subtitle}</p></div><button className="primary-btn" onClick={onAdd}>+ {addLabel}</button></div>
+    <div className="workspace-head"><div><p className="eyebrow">CRM / {title.toUpperCase()}</p><h2>{title}</h2><p>{subtitle}</p></div>{onAdd && addLabel ? <button className="primary-btn" onClick={onAdd}>+ {addLabel}</button> : null}</div>
     <div className="toolbar"><div className="search-box">⌕<input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${title.toLowerCase()}…`}/></div><span className="result-count">{count} records</span></div>
     <div className="table-card">{children}</div>
   </section>;
