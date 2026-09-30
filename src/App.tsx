@@ -8,6 +8,7 @@ type Lead = { id:string; thread_id:string; name:string; email:string; company:st
 type Opportunity = { id:string; lead_id:string; contact_id?:string; company_id?:string; name:string; stage:string; value:number; probability:number; expected_close_at?:number; owner:string; notes:string; company_name?:string; lead_name?:string; created_at:number };
 type Prospect = { id:string; name:string; url:string; snippet:string; source:string; status:string; target_service:string; target_niche:string; target_location:string; qualification_status:string; qualification_reason:string; website_status:string; contact_name?:string; contact_email?:string; contact_phone?:string; fit_reason?:string; pain_point?:string; outreach_subject?:string; analysis_status:string; contact_status:string; contact_source?:string; website_found?:boolean; created_at:number; updated_at:number };
 type Activity = { id:string; contact_id?:string; lead_id?:string; type:string; title:string; detail:string; created_at:number; contact_name?:string; lead_name?:string };
+type InboxThread = { thread_id:string; title:string; created_at:number; updated_at:number; lead_id?:string; lead_name?:string; lead_email?:string; lead_company?:string; message?:unknown; last_role?:string; last_message_at?:number };
 type Appointment = { id:string; contact_id?:string; lead_id?:string; title:string; description:string; start_at:number; end_at:number; status:string; location:string; meeting_url?:string; contact_name?:string; lead_name?:string; created_at:number };
 
 type Dashboard = {
@@ -30,6 +31,7 @@ export default function App() {
   const [prospects,setProspects] = useState<Prospect[]>([]);
   const [activities,setActivities] = useState<Activity[]>([]);
   const [appointments,setAppointments] = useState<Appointment[]>([]);
+  const [inbox,setInbox] = useState<InboxThread[]>([]);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState("");
   const [search,setSearch] = useState("");
@@ -39,7 +41,7 @@ export default function App() {
   const loadAll = async () => {
     setLoading(true); setError("");
     try {
-      const [dashboard,contactRows,companyRows,leadRows,opportunityRows,prospectRows,activityRows,appointmentRows] = await Promise.all([
+      const [dashboard,contactRows,companyRows,leadRows,opportunityRows,prospectRows,activityRows,appointmentRows,inboxRows] = await Promise.all([
         getJson<Dashboard>("/api/dashboard"),
         getJson<{data:Contact[]}>("/api/contacts"),
         getJson<{data:Company[]}>("/api/companies"),
@@ -47,12 +49,14 @@ export default function App() {
         getJson<{data:Opportunity[]}>("/api/opportunities"),
         getJson<{data:Prospect[]}>("/api/prospects"),
         getJson<{data:Activity[]}>("/api/activities"),
-        getJson<{data:Appointment[]}>("/api/appointments")
+        getJson<{data:Appointment[]}>("/api/appointments"),
+        getJson<{data:InboxThread[]}>("/api/inbox")
       ]);
       setData(dashboard); setContacts(contactRows.data ?? []); setCompanies(companyRows.data ?? []);
       setLeads(leadRows.data ?? []); setOpportunities(opportunityRows.data ?? []);
       setProspects(prospectRows.data ?? []); setActivities(activityRows.data ?? []);
       setAppointments(appointmentRows.data ?? []);
+      setInbox(inboxRows.data ?? []);
     } catch(e) {
       setError(e instanceof Error ? e.message : "Unable to load CRM");
     } finally { setLoading(false); }
@@ -67,6 +71,7 @@ export default function App() {
   const filteredProspects = useMemo(() => filterRows(prospects, search, ["name","source","status","qualification_status","contact_name","contact_email","target_niche","target_location"]), [prospects,search]);
   const filteredActivities = useMemo(() => filterRows(activities, search, ["type","title","detail","contact_name","lead_name"]), [activities,search]);
   const filteredAppointments = useMemo(() => filterRows(appointments, search, ["title","status","location","contact_name","lead_name"]), [appointments,search]);
+  const filteredInbox = useMemo(() => filterRows(inbox, search, ["title","lead_name","lead_email","lead_company","last_role"]), [inbox,search]);
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -93,7 +98,8 @@ export default function App() {
       {active === "Pipeline" && <PipelineView rows={opportunities} onOpen={(id)=>setSelectedRecord({kind:"opportunity",id})} onStageChanged={loadAll}/>}
       {active === "Activity" && <ActivityView rows={filteredActivities} search={search} setSearch={setSearch}/>}
       {active === "Appointments" && <AppointmentsView rows={filteredAppointments} search={search} setSearch={setSearch} contacts={contacts} leads={leads} onSaved={loadAll}/>}
-      {["Tasks","Campaigns","Workflows","Invoices","Inbox"].includes(active) &&
+      {active === "Inbox" && <InboxView rows={filteredInbox} search={search} setSearch={setSearch}/>}
+      {["Tasks","Campaigns","Workflows","Invoices"].includes(active) &&
         <section className="coming-card"><div className="coming-icon">✦</div><p className="eyebrow">{active.toUpperCase()}</p><h2>{active} workspace</h2><p>The CRM foundation is ready. This module will plug into the unified workspace instead of becoming a separate disconnected screen.</p><div className="coming-meta">Connected to Neon · Netlify Functions · Jabari CRM</div></section>}
 
       {modal === "company" && <CompanyForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
@@ -167,6 +173,34 @@ function PipelineView({rows,onOpen,onStageChanged}:{rows:Opportunity[];onOpen:(i
   const total=rows.reduce((sum,o)=>sum+Number(o.value||0),0);
   return <section className="pipeline-workspace"><div className="workspace-head"><div><p className="eyebrow">CRM / PIPELINE</p><h2>Opportunity Pipeline</h2><p>Move deals through the same lifecycle that powers your sales workspace.</p></div><div className="pipeline-summary"><strong>{formatMoney(total)}</strong><span>pipeline value</span></div></div>{message&&<div className="info-note">{message}</div>}<div className="pipeline-board">{pipelineStages.map(stage=>{const items=rows.filter(o=>o.stage===stage);return <div className="pipeline-column" key={stage}><div className="pipeline-column-head"><div><strong>{stage.replaceAll("_"," ")}</strong><small>{items.length} deal{items.length===1?"":"s"}</small></div><span>{formatMoney(items.reduce((sum,o)=>sum+Number(o.value||0),0))}</span></div>{items.map(o=><article className="deal-card" key={o.id} onClick={()=>onOpen(o.id)}><div className="deal-card-top"><strong>{o.name}</strong><Badge text={`${o.probability}%`}/></div><small>{o.company_name || o.lead_name || "Unlinked account"}</small><div className="deal-value">{formatMoney(o.value)}</div><div className="deal-meta"><span>{o.owner || "Unassigned"}</span><span>{o.expected_close_at ? formatDate(o.expected_close_at) : "No close date"}</span></div><select value={o.stage} disabled={busy===o.id} onClick={e=>e.stopPropagation()} onChange={e=>move(o.id,e.target.value)}>{pipelineStages.map(s=><option key={s}>{s}</option>)}</select></article>)}{!items.length&&<div className="pipeline-empty">Drop or move deals here</div>}</div>})}</div></section>;
 }
+
+function InboxView({rows,search,setSearch}:{rows:InboxThread[];search:string;setSearch:(v:string)=>void}) {
+  const [selected,setSelected]=useState<InboxThread|null>(null);
+  return <Workspace title="Inbox" subtitle="A unified conversation view connected to the same leads and CRM records." search={search} setSearch={setSearch} count={rows.length}>
+    <div className="inbox-layout">
+      <div className="inbox-list">
+        {rows.map(t=><button key={t.thread_id} className={selected?.thread_id===t.thread_id ? "inbox-thread active" : "inbox-thread"} onClick={()=>setSelected(t)}>
+          <div className="inbox-avatar">{(t.lead_name || t.title || "?").slice(0,1).toUpperCase()}</div>
+          <div className="inbox-thread-main"><div className="inbox-thread-top"><strong>{t.lead_name || t.title || "Conversation"}</strong><span>{t.last_message_at ? formatDateTime(t.last_message_at) : formatDateTime(t.updated_at)}</span></div><small>{t.lead_company || t.lead_email || "No linked lead"}</small><p>{messagePreview(t.message) || "No messages yet"}</p></div>
+        </button>)}
+        {!rows.length && <Empty text="No conversations found."/>}
+      </div>
+      <div className="inbox-detail">
+        {selected ? <><div className="inbox-detail-head"><div><p className="eyebrow">CONVERSATION</p><h3>{selected.lead_name || selected.title}</h3><span>{selected.lead_email || selected.lead_company || "CRM conversation"}</span></div><Badge text={selected.last_role || "thread"}/></div><div className="conversation-placeholder"><div className="message-bubble user"><small>Latest message</small><p>{messagePreview(selected.message) || "No message content available."}</p></div><div className="info-note">This release establishes the unified Inbox surface. Full message history and outbound sending will plug into this same thread next.</div></div></> : <div className="inbox-empty"><div className="coming-icon">✉</div><h3>Select a conversation</h3><p>Choose a thread to inspect its CRM context.</p></div>}
+      </div>
+    </div>
+  </Workspace>;
+}
+
+function messagePreview(value:unknown) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const v=value as Record<string,unknown>;
+    for (const key of ["text","content","body","message"]) if (typeof v[key] === "string") return v[key] as string;
+  }
+  return value ? JSON.stringify(value) : "";
+}
+function formatDateTime(value:number) { return new Date(Number(value)).toLocaleString(); }
 
 function RecordDrawer({kind,id,contacts,companies,leads,opportunities,activities,appointments,onClose,onRefresh}:{kind:string;id:string;contacts:Contact[];companies:Company[];leads:Lead[];opportunities:Opportunity[];activities:Activity[];appointments:Appointment[];onClose:()=>void;onRefresh:()=>Promise<void>}) {
   const opportunity=opportunities.find(o=>o.id===id); const contact=contacts.find(c=>c.id===id); const company=companies.find(c=>c.id===id); const lead=leads.find(l=>l.id===id);
