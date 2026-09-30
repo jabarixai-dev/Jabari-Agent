@@ -10,6 +10,9 @@ type Prospect = { id:string; name:string; url:string; snippet:string; source:str
 type Activity = { id:string; contact_id?:string; lead_id?:string; type:string; title:string; detail:string; created_at:number; contact_name?:string; lead_name?:string };
 type InboxThread = { thread_id:string; title:string; created_at:number; updated_at:number; lead_id?:string; lead_name?:string; lead_email?:string; lead_company?:string; message?:unknown; last_role?:string; last_message_at?:number };
 type Appointment = { id:string; contact_id?:string; lead_id?:string; title:string; description:string; start_at:number; end_at:number; status:string; location:string; meeting_url?:string; contact_name?:string; lead_name?:string; created_at:number };
+type Campaign = { id:string; name:string; description:string; status:string; created_at:number; updated_at:number; step_count:number; enrollment_count:number; active_count:number };
+type Workflow = { id:string; name:string; trigger:string; condition:string; action:string; action_value:string; steps?:unknown; goal?:string; enabled:boolean; created_at:number; updated_at:number; execution_count:number; active_count:number };
+type Task = { id:string; lead_id:string; title:string; detail:string; status:string; created_at:number; updated_at:number; lead_name?:string; lead_email?:string; lead_company?:string };
 
 type Dashboard = {
   metrics:{contacts:number;openLeads:number;openOpportunities:number;tasksDue:number};
@@ -32,16 +35,19 @@ export default function App() {
   const [activities,setActivities] = useState<Activity[]>([]);
   const [appointments,setAppointments] = useState<Appointment[]>([]);
   const [inbox,setInbox] = useState<InboxThread[]>([]);
+  const [campaigns,setCampaigns] = useState<Campaign[]>([]);
+  const [workflows,setWorkflows] = useState<Workflow[]>([]);
+  const [tasks,setTasks] = useState<Task[]>([]);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState("");
   const [search,setSearch] = useState("");
-  const [modal,setModal] = useState<"contact"|"company"|"lead"|"opportunity"|null>(null);
+  const [modal,setModal] = useState<"contact"|"company"|"lead"|"opportunity"|"campaign"|"workflow"|"task"|null>(null);
   const [selectedRecord,setSelectedRecord] = useState<{kind:string;id:string}|null>(null);
 
   const loadAll = async () => {
     setLoading(true); setError("");
     try {
-      const [dashboard,contactRows,companyRows,leadRows,opportunityRows,prospectRows,activityRows,appointmentRows,inboxRows] = await Promise.all([
+      const [dashboard,contactRows,companyRows,leadRows,opportunityRows,prospectRows,activityRows,appointmentRows,inboxRows,campaignRows,workflowRows,taskRows] = await Promise.all([
         getJson<Dashboard>("/api/dashboard"),
         getJson<{data:Contact[]}>("/api/contacts"),
         getJson<{data:Company[]}>("/api/companies"),
@@ -50,13 +56,17 @@ export default function App() {
         getJson<{data:Prospect[]}>("/api/prospects"),
         getJson<{data:Activity[]}>("/api/activities"),
         getJson<{data:Appointment[]}>("/api/appointments"),
-        getJson<{data:InboxThread[]}>("/api/inbox")
+        getJson<{data:InboxThread[]}>("/api/inbox"),
+        getJson<{data:Campaign[]}>("/api/campaigns"),
+        getJson<{data:Workflow[]}>("/api/workflows"),
+        getJson<{data:Task[]}>("/api/tasks")
       ]);
       setData(dashboard); setContacts(contactRows.data ?? []); setCompanies(companyRows.data ?? []);
       setLeads(leadRows.data ?? []); setOpportunities(opportunityRows.data ?? []);
       setProspects(prospectRows.data ?? []); setActivities(activityRows.data ?? []);
       setAppointments(appointmentRows.data ?? []);
       setInbox(inboxRows.data ?? []);
+      setCampaigns(campaignRows.data ?? []); setWorkflows(workflowRows.data ?? []); setTasks(taskRows.data ?? []);
     } catch(e) {
       setError(e instanceof Error ? e.message : "Unable to load CRM");
     } finally { setLoading(false); }
@@ -72,6 +82,9 @@ export default function App() {
   const filteredActivities = useMemo(() => filterRows(activities, search, ["type","title","detail","contact_name","lead_name"]), [activities,search]);
   const filteredAppointments = useMemo(() => filterRows(appointments, search, ["title","status","location","contact_name","lead_name"]), [appointments,search]);
   const filteredInbox = useMemo(() => filterRows(inbox, search, ["title","lead_name","lead_email","lead_company","last_role"]), [inbox,search]);
+  const filteredCampaigns = useMemo(() => filterRows(campaigns, search, ["name","description","status"]), [campaigns,search]);
+  const filteredWorkflows = useMemo(() => filterRows(workflows, search, ["name","trigger","condition","action","goal"]), [workflows,search]);
+  const filteredTasks = useMemo(() => filterRows(tasks, search, ["title","detail","status","lead_name","lead_email","lead_company"]), [tasks,search]);
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -99,13 +112,19 @@ export default function App() {
       {active === "Activity" && <ActivityView rows={filteredActivities} search={search} setSearch={setSearch}/>}
       {active === "Appointments" && <AppointmentsView rows={filteredAppointments} search={search} setSearch={setSearch} contacts={contacts} leads={leads} onSaved={loadAll}/>}
       {active === "Inbox" && <InboxView rows={filteredInbox} search={search} setSearch={setSearch}/>}
-      {["Tasks","Campaigns","Workflows","Invoices"].includes(active) &&
+      {active === "Tasks" && <TasksView rows={filteredTasks} search={search} setSearch={setSearch} leads={leads} onAdd={()=>setModal("task")} onSaved={loadAll}/>}
+      {active === "Campaigns" && <CampaignsView rows={filteredCampaigns} search={search} setSearch={setSearch} onAdd={()=>setModal("campaign")} />}
+      {active === "Workflows" && <WorkflowsView rows={filteredWorkflows} search={search} setSearch={setSearch} onSaved={loadAll} onAdd={()=>setModal("workflow")} />}
+      {active === "Invoices" &&
         <section className="coming-card"><div className="coming-icon">✦</div><p className="eyebrow">{active.toUpperCase()}</p><h2>{active} workspace</h2><p>The CRM foundation is ready. This module will plug into the unified workspace instead of becoming a separate disconnected screen.</p><div className="coming-meta">Connected to Neon · Netlify Functions · Jabari CRM</div></section>}
 
       {modal === "company" && <CompanyForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "contact" && <ContactForm companies={companies} onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "lead" && <LeadForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "opportunity" && <OpportunityForm leads={leads} contacts={contacts} companies={companies} onClose={()=>setModal(null)} onSaved={loadAll}/>}
+      {modal === "campaign" && <CampaignForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
+      {modal === "workflow" && <WorkflowForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
+      {modal === "task" && <TaskForm leads={leads} onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {selectedRecord && <RecordDrawer kind={selectedRecord.kind} id={selectedRecord.id} contacts={contacts} companies={companies} leads={leads} opportunities={opportunities} activities={activities} appointments={appointments} onClose={()=>setSelectedRecord(null)} onRefresh={loadAll}/>}
     </main>
   </div>;
@@ -261,6 +280,48 @@ function AppointmentForm({contacts,leads,onClose,onSaved}:{contacts:Contact[];le
     const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create appointment");await onSaved();
   }catch(x){setError(x instanceof Error?x.message:"Unable to create appointment")}finally{setSaving(false)}};
   return <Modal title="Add appointment" onClose={onClose}><form onSubmit={submit}><div className="form-grid"><Field label="Title" name="title" value={title} onChange={setTitle} placeholder="Discovery call"/><label className="field"><span>Contact</span><select value={contactId} onChange={e=>setContactId(e.target.value)}><option value="">None</option>{contacts.map(c=><option value={c.id} key={c.id}>{c.name} · {c.company}</option>)}</select></label><label className="field"><span>Lead</span><select value={leadId} onChange={e=>setLeadId(e.target.value)}><option value="">None</option>{leads.map(l=><option value={l.id} key={l.id}>{l.name} · {l.company}</option>)}</select></label><Field label="Location" name="location" value={location} onChange={setLocation} placeholder="online"/><Field label="Start" name="start" value={start} onChange={setStart} type="datetime-local"/><Field label="End" name="end" value={end} onChange={setEnd} type="datetime-local"/><label className="field"><span>Status</span><select value={status} onChange={e=>setStatus(e.target.value)}><option>scheduled</option><option>confirmed</option><option>completed</option><option>cancelled</option></select></label><Field label="Meeting URL" name="meeting_url" value={meetingUrl} onChange={setMeetingUrl} placeholder="https://…" required={false}/></div><Textarea label="Description" value={description} onChange={setDescription} required={false}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
+}
+
+
+function TasksView({rows,search,setSearch,leads,onAdd,onSaved}:{rows:Task[];search:string;setSearch:(v:string)=>void;leads:Lead[];onAdd:()=>void;onSaved:()=>Promise<void>}) {
+  const update=async(id:string,status:string)=>{const r=await fetch("/api/tasks",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status})});if(r.ok) await onSaved();};
+  return <Workspace title="Tasks" subtitle="Follow-up work generated by the CRM and workflows, kept next to the lead it belongs to." search={search} setSearch={setSearch} addLabel="Add task" onAdd={onAdd} count={rows.length}>
+    <Table headers={["Task","Lead","Status","Updated","Action"]}>{rows.map(t=><tr key={t.id}><td><strong>{t.title}</strong><small>{t.detail}</small></td><td>{t.lead_name || "Unknown"}<small>{t.lead_company || t.lead_email || "—"}</small></td><td><Badge text={t.status}/></td><td>{formatDate(t.updated_at)}</td><td>{t.status === "completed" || t.status === "done" ? <button className="table-action" onClick={()=>update(t.id,"pending")}>Reopen</button> : <button className="table-action" onClick={()=>update(t.id,"completed")}>Complete</button>}</td></tr>)}</Table>
+    {!rows.length && <Empty text="No tasks yet. Create a follow-up task from the CRM."/>}
+  </Workspace>;
+}
+
+function CampaignsView({rows,search,setSearch,onAdd}:{rows:Campaign[];search:string;setSearch:(v:string)=>void;onAdd:()=>void}) {
+  return <Workspace title="Campaigns" subtitle="Structured nurture sequences with steps, enrollments and lifecycle status." search={search} setSearch={setSearch} addLabel="Create campaign" onAdd={onAdd} count={rows.length}>
+    <Table headers={["Campaign","Status","Steps","Enrollments","Active","Updated"]}>{rows.map(c=><tr key={c.id}><td><strong>{c.name}</strong><small>{c.description || "No description"}</small></td><td><Badge text={c.status}/></td><td>{c.step_count}</td><td>{c.enrollment_count}</td><td>{c.active_count}</td><td>{formatDate(c.updated_at)}</td></tr>)}</Table>
+    {!rows.length && <Empty text="No campaigns yet. Create your first nurture sequence."/>}
+  </Workspace>;
+}
+
+function WorkflowsView({rows,search,setSearch,onSaved,onAdd}:{rows:Workflow[];search:string;setSearch:(v:string)=>void;onSaved:()=>Promise<void>;onAdd:()=>void}) {
+  const toggle=async(w:Workflow)=>{const r=await fetch("/api/workflows",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:w.id,enabled:!w.enabled})});if(r.ok) await onSaved();};
+  return <Workspace title="Workflows" subtitle="Event-driven automation rules that connect CRM triggers to actions and follow-up." search={search} setSearch={setSearch} addLabel="Create workflow" onAdd={onAdd} count={rows.length}>
+    <Table headers={["Workflow","Trigger","Action","Goal","Executions","State"]}>{rows.map(w=><tr key={w.id}><td><strong>{w.name}</strong><small>{w.condition}</small></td><td>{w.trigger}</td><td>{w.action}<small>{w.action_value}</small></td><td>{w.goal || "—"}</td><td>{w.execution_count}<small>{w.active_count} active</small></td><td><button className="table-action" onClick={()=>toggle(w)}>{w.enabled ? "Enabled" : "Disabled"}</button></td></tr>)}</Table>
+    {!rows.length && <Empty text="No workflows yet. Create a rule to automate CRM follow-up."/>}
+  </Workspace>;
+}
+
+function CampaignForm({onClose,onSaved}:{onClose:()=>void;onSaved:()=>Promise<void>}) {
+  const [name,setName]=useState(""); const [description,setDescription]=useState(""); const [subject,setSubject]=useState(""); const [body,setBody]=useState(""); const [delay,setDelay]=useState("0"); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{const r=await fetch("/api/campaigns",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,description,status:"draft",steps:body?[{type:"email",delay_minutes:Number(delay)||0,subject,body}]:[]})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create campaign");await onSaved();onClose();}catch(x){setError(x instanceof Error?x.message:"Unable to create campaign")}finally{setSaving(false)}};
+  return <Modal title="Create campaign" onClose={onClose}><form onSubmit={submit}><div className="form-grid"><Field label="Campaign name" name="name" value={name} onChange={setName} placeholder="New lead nurture"/><Field label="First-step delay (minutes)" name="delay" value={delay} onChange={setDelay} placeholder="0"/></div><Textarea label="Description" value={description} onChange={setDescription} required={false}/><div className="form-grid"><Field label="Step subject" name="subject" value={subject} onChange={setSubject} placeholder="Quick follow-up" required={false}/></div><Textarea label="First-step message" value={body} onChange={setBody} required={false}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
+}
+
+function WorkflowForm({onClose,onSaved}:{onClose:()=>void;onSaved:()=>Promise<void>}) {
+  const [name,setName]=useState(""); const [trigger,setTrigger]=useState("lead_created"); const [condition,setCondition]=useState("always"); const [action,setAction]=useState("create_task"); const [actionValue,setActionValue]=useState("Follow up with lead"); const [goal,setGoal]=useState(""); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{const r=await fetch("/api/workflows",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,trigger,condition,action,action_value:actionValue,goal,enabled:false})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create workflow");await onSaved();onClose();}catch(x){setError(x instanceof Error?x.message:"Unable to create workflow")}finally{setSaving(false)}};
+  return <Modal title="Create workflow" onClose={onClose}><form onSubmit={submit}><Field label="Workflow name" name="name" value={name} onChange={setName} placeholder="New lead follow-up"/><div className="form-grid"><Field label="Trigger" name="trigger" value={trigger} onChange={setTrigger} placeholder="lead_created"/><Field label="Condition" name="condition" value={condition} onChange={setCondition} placeholder="always"/><Field label="Action" name="action" value={action} onChange={setAction} placeholder="create_task"/><Field label="Action value" name="action_value" value={actionValue} onChange={setActionValue} placeholder="Follow up with lead"/></div><Field label="Goal" name="goal" value={goal} onChange={setGoal} placeholder="Move qualified leads toward an appointment" required={false}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
+}
+
+function TaskForm({leads,onClose,onSaved}:{leads:Lead[];onClose:()=>void;onSaved:()=>Promise<void>}) {
+  const [leadId,setLeadId]=useState(leads[0]?.id||""); const [title,setTitle]=useState(""); const [detail,setDetail]=useState(""); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{const r=await fetch("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lead_id:leadId,title,detail,status:"pending"})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create task");await onSaved();onClose();}catch(x){setError(x instanceof Error?x.message:"Unable to create task")}finally{setSaving(false)}};
+  return <Modal title="Add task" onClose={onClose}><form onSubmit={submit}><label className="field"><span>Lead *</span><select required value={leadId} onChange={e=>setLeadId(e.target.value)}><option value="">Select lead</option>{leads.map(l=><option key={l.id} value={l.id}>{l.name} · {l.company}</option>)}</select></label><Field label="Task title" name="title" value={title} onChange={setTitle} placeholder="Send proposal"/><Textarea label="Details" value={detail} onChange={setDetail}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
 }
 
 function Workspace({title,subtitle,search,setSearch,addLabel,onAdd,count,children}:{title:string;subtitle:string;search:string;setSearch:(v:string)=>void;addLabel:string;onAdd:()=>void;count:number;children:ReactNode}) {
