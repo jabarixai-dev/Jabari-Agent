@@ -54,7 +54,7 @@ export default async function handler(request: Request) {
       recentOpportunities,
       activity,
     });
-    } catch (error) {
+  } catch (error) {
     console.error("Dashboard query failed", error);
 
     const message =
@@ -68,5 +68,6 @@ export default async function handler(request: Request) {
       500,
     );
   }
+}
 
 export const config: Config = { path: "/api/dashboard" };
