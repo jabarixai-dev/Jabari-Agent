@@ -8,34 +8,60 @@ export default async function handler(request: Request) {
   }
 
   try {
-    const [contacts, leads, opportunities, tasks, activity] = await Promise.all([
+    const [contacts, leads, opportunities, recentActivity] = await Promise.all([
       sql`SELECT COUNT(*)::int AS count FROM contacts`,
-      sql`SELECT COUNT(*)::int AS count FROM leads WHERE status = 'open'`,
-      sql`SELECT COUNT(*)::int AS count FROM opportunities WHERE status = 'open'`,
-      sql`SELECT COUNT(*)::int AS count FROM tasks WHERE status <> 'completed' AND (due_at IS NULL OR due_at <= now() + interval '7 days')`,
+      sql`SELECT COUNT(*)::int AS count FROM leads WHERE status IN ('new', 'contacted', 'qualified')`,
+      sql`SELECT COUNT(*)::int AS count FROM opportunities`,
       sql`
-        SELECT id, type, title, description, occurred_at
-        FROM activities
-        ORDER BY occurred_at DESC
+        SELECT
+          id,
+          type,
+          title,
+          detail AS description,
+          to_timestamp(created_at / 1000.0) AS occurred_at
+        FROM crm_activities
+        ORDER BY created_at DESC
         LIMIT 8
       `,
     ]);
 
     const [recentContacts, recentLeads, recentOpportunities] = await Promise.all([
       sql`
-        SELECT id, first_name, last_name, email, job_title, status, created_at
+        SELECT
+          id,
+          split_part(name, ' ', 1) AS first_name,
+          NULLIF(split_part(name, ' ', 2), '') AS last_name,
+          email,
+          job_title,
+          'active' AS status,
+          to_timestamp(created_at / 1000.0) AS created_at
         FROM contacts
         ORDER BY created_at DESC
         LIMIT 5
       `,
       sql`
-        SELECT id, title, stage, status, score, estimated_value, created_at
+        SELECT
+          id,
+          name AS title,
+          NULL::text AS stage,
+          status,
+          NULL::numeric AS score,
+          NULL::numeric AS estimated_value,
+          to_timestamp(created_at / 1000.0) AS created_at
         FROM leads
         ORDER BY created_at DESC
         LIMIT 5
       `,
       sql`
-        SELECT id, name, stage, status, value, probability, expected_close_date, created_at
+        SELECT
+          id,
+          name,
+          stage,
+          'open' AS status,
+          value,
+          probability,
+          to_timestamp(expected_close_at / 1000.0) AS expected_close_date,
+          to_timestamp(created_at / 1000.0) AS created_at
         FROM opportunities
         ORDER BY created_at DESC
         LIMIT 5
@@ -47,12 +73,12 @@ export default async function handler(request: Request) {
         contacts: contacts[0]?.count ?? 0,
         openLeads: leads[0]?.count ?? 0,
         openOpportunities: opportunities[0]?.count ?? 0,
-        tasksDue: tasks[0]?.count ?? 0,
+        tasksDue: 0,
       },
       recentContacts,
       recentLeads,
       recentOpportunities,
-      activity,
+      activity: recentActivity,
     });
   } catch (error) {
     console.error("Dashboard query failed", error);
