@@ -9,6 +9,7 @@ type Opportunity = { id:string; lead_id:string; contact_id?:string; company_id?:
 type Prospect = { id:string; name:string; url:string; snippet:string; source:string; status:string; target_service:string; target_niche:string; target_location:string; qualification_status:string; qualification_reason:string; website_status:string; contact_name?:string; contact_email?:string; contact_phone?:string; fit_reason?:string; pain_point?:string; outreach_subject?:string; analysis_status:string; contact_status:string; contact_source?:string; website_found?:boolean; created_at:number; updated_at:number };
 type Activity = { id:string; contact_id?:string; lead_id?:string; type:string; title:string; detail:string; created_at:number; contact_name?:string; lead_name?:string };
 type InboxThread = { thread_id:string; title:string; created_at:number; updated_at:number; lead_id?:string; lead_name?:string; lead_email?:string; lead_company?:string; message?:unknown; last_role?:string; last_message_at?:number };
+type InboxMessage = { id:string; thread_id:string; message_id:string; role:string; message:unknown; order:number; created_at:number };
 type Appointment = { id:string; contact_id?:string; lead_id?:string; title:string; description:string; start_at:number; end_at:number; status:string; location:string; meeting_url?:string; contact_name?:string; lead_name?:string; created_at:number };
 type Campaign = { id:string; name:string; description:string; status:string; created_at:number; updated_at:number; step_count:number; enrollment_count:number; active_count:number };
 type Workflow = { id:string; name:string; trigger:string; condition:string; action:string; action_value:string; steps?:unknown; goal?:string; enabled:boolean; created_at:number; updated_at:number; execution_count:number; active_count:number };
@@ -197,7 +198,35 @@ function PipelineView({rows,onOpen,onStageChanged}:{rows:Opportunity[];onOpen:(i
 
 function InboxView({rows,search,setSearch}:{rows:InboxThread[];search:string;setSearch:(v:string)=>void}) {
   const [selected,setSelected]=useState<InboxThread|null>(null);
-  return <Workspace title="Inbox" subtitle="A unified conversation view connected to the same leads and CRM records." search={search} setSearch={setSearch} count={rows.length}>
+  const [messages,setMessages]=useState<InboxMessage[]>([]);
+  const [draft,setDraft]=useState("");
+  const [loadingMessages,setLoadingMessages]=useState(false);
+  const [sending,setSending]=useState(false);
+  const [messageError,setMessageError]=useState("");
+
+  useEffect(()=>{
+    if (!selected) { setMessages([]); return; }
+    let cancelled=false;
+    setLoadingMessages(true); setMessageError("");
+    fetch(`/api/inbox?thread_id=${encodeURIComponent(selected.thread_id)}`).then(async r=>{
+      const b=await r.json(); if(!r.ok) throw new Error(b.error||"Unable to load conversation");
+      if(!cancelled) setMessages(b.data||[]);
+    }).catch(e=>{if(!cancelled)setMessageError(e instanceof Error?e.message:"Unable to load conversation")})
+      .finally(()=>{if(!cancelled)setLoadingMessages(false)});
+    return ()=>{cancelled=true};
+  },[selected?.thread_id]);
+
+  const send=async()=>{
+    const text=draft.trim(); if(!selected||!text||sending)return;
+    setSending(true); setMessageError("");
+    try {
+      const r=await fetch("/api/inbox",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({thread_id:selected.thread_id,message:text})});
+      const b=await r.json(); if(!r.ok) throw new Error(b.error||"Unable to send message");
+      setMessages(prev=>[...prev,b.data]); setDraft("");
+    } catch(e){setMessageError(e instanceof Error?e.message:"Unable to send message")} finally{setSending(false)}
+  };
+
+  return <Workspace title="Inbox" subtitle="A unified conversation workspace connected to leads and CRM records." search={search} setSearch={setSearch} count={rows.length}>
     <div className="inbox-layout">
       <div className="inbox-list">
         {rows.map(t=><button key={t.thread_id} className={selected?.thread_id===t.thread_id ? "inbox-thread active" : "inbox-thread"} onClick={()=>setSelected(t)}>
@@ -207,7 +236,15 @@ function InboxView({rows,search,setSearch}:{rows:InboxThread[];search:string;set
         {!rows.length && <Empty text="No conversations found."/>}
       </div>
       <div className="inbox-detail">
-        {selected ? <><div className="inbox-detail-head"><div><p className="eyebrow">CONVERSATION</p><h3>{selected.lead_name || selected.title}</h3><span>{selected.lead_email || selected.lead_company || "CRM conversation"}</span></div><Badge text={selected.last_role || "thread"}/></div><div className="conversation-placeholder"><div className="message-bubble user"><small>Latest message</small><p>{messagePreview(selected.message) || "No message content available."}</p></div><div className="info-note">This release establishes the unified Inbox surface. Full message history and outbound sending will plug into this same thread next.</div></div></> : <div className="inbox-empty"><div className="coming-icon">✉</div><h3>Select a conversation</h3><p>Choose a thread to inspect its CRM context.</p></div>}
+        {selected ? <div className="conversation-panel">
+          <div className="inbox-detail-head"><div><p className="eyebrow">CONVERSATION</p><h3>{selected.lead_name || selected.title}</h3><span>{selected.lead_email || selected.lead_company || "CRM conversation"}</span></div><Badge text="CRM"/></div>
+          <div className="conversation-messages">
+            {loadingMessages ? <Empty text="Loading conversation…"/> : messages.length ? messages.map(m=><div key={m.id} className={`message-bubble ${m.role === "user" ? "incoming" : "outgoing"}`}><small>{m.role === "user" ? "Incoming" : "Jabari / You"} · {formatDateTime(m.created_at)}</small><p>{messagePreview(m.message)}</p></div>) : <Empty text="No messages in this conversation yet."/>}
+          </div>
+          {messageError&&<div className="form-error">{messageError}</div>}
+          <div className="composer"><textarea value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="Write a message…"/><button className="primary-btn" disabled={!draft.trim()||sending} onClick={send}>{sending?"Sending…":"Send"}</button></div>
+          <div className="composer-note">Enter to send · Shift+Enter for a new line · Messages are recorded in the CRM activity timeline.</div>
+        </div> : <div className="inbox-empty"><div className="coming-icon">✉</div><h3>Select a conversation</h3><p>Choose a thread to inspect its messages and send a reply.</p></div>}
       </div>
     </div>
   </Workspace>;

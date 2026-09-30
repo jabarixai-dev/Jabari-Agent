@@ -23,3 +23,6 @@
 .note-input:focus{border-color:#71717a}
 .note-actions{display:flex;justify-content:flex-end;margin-top:8px}
 @media(max-width:650px){.detail-grid{grid-template-columns:1fr}}
+
+/* V9 full conversation inbox */
+.conversation-panel{height:100%;display:flex;flex-direction:column}.conversation-messages{flex:1;min-height:310px;max-height:520px;overflow:auto;padding:20px 0;display:flex;flex-direction:column;gap:10px}.message-bubble.incoming{margin-right:auto;background:var(--panel)}.message-bubble.outgoing{margin-left:auto;background:#1d1d20}.message-bubble.outgoing p{white-space:pre-wrap}.composer{display:flex;gap:9px;align-items:flex-end;border-top:1px solid var(--border);padding-top:15px}.composer textarea{flex:1;min-height:74px;max-height:180px;resize:vertical;background:var(--panel);color:inherit;border:1px solid var(--border);border-radius:10px;padding:11px;font:inherit;font-size:12px;outline:none}.composer textarea:focus{border-color:#71717a}.composer-note{color:var(--muted);font-size:9px;padding-top:7px}.message-bubble small{color:var(--muted);font-size:9px;text-transform:uppercase}.message-bubble p{white-space:pre-wrap}@media(max-width:650px){.composer{display:grid}.composer .primary-btn{width:100%}}
