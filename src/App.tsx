@@ -14,6 +14,7 @@ type Appointment = { id:string; contact_id?:string; lead_id?:string; title:strin
 type Campaign = { id:string; name:string; description:string; status:string; created_at:number; updated_at:number; step_count:number; enrollment_count:number; active_count:number };
 type Workflow = { id:string; name:string; trigger:string; condition:string; action:string; action_value:string; steps?:unknown; goal?:string; enabled:boolean; created_at:number; updated_at:number; execution_count:number; active_count:number };
 type Task = { id:string; lead_id:string; title:string; detail:string; status:string; created_at:number; updated_at:number; lead_name?:string; lead_email?:string; lead_company?:string };
+type Invoice = { id:string; number:string; customer_name:string; customer_email:string; contact_id?:string; lead_id?:string; opportunity_id?:string; status:string; currency:string; subtotal:number; total:number; due_at?:number; paid_at?:number; notes:string; created_at:number; updated_at:number; item_count:number; paid_amount:number };
 
 type Dashboard = {
   metrics:{contacts:number;openLeads:number;openOpportunities:number;tasksDue:number};
@@ -39,10 +40,11 @@ export default function App() {
   const [campaigns,setCampaigns] = useState<Campaign[]>([]);
   const [workflows,setWorkflows] = useState<Workflow[]>([]);
   const [tasks,setTasks] = useState<Task[]>([]);
+  const [invoices,setInvoices] = useState<Invoice[]>([]);
   const [loading,setLoading] = useState(true);
   const [error,setError] = useState("");
   const [search,setSearch] = useState("");
-  const [modal,setModal] = useState<"contact"|"company"|"lead"|"opportunity"|"campaign"|"workflow"|"task"|null>(null);
+  const [modal,setModal] = useState<"contact"|"company"|"lead"|"opportunity"|"campaign"|"workflow"|"task"|"invoice"|null>(null);
   const [selectedRecord,setSelectedRecord] = useState<{kind:string;id:string}|null>(null);
 
   const loadAll = async () => {
@@ -60,14 +62,15 @@ export default function App() {
         getJson<{data:InboxThread[]}>("/api/inbox"),
         getJson<{data:Campaign[]}>("/api/campaigns"),
         getJson<{data:Workflow[]}>("/api/workflows"),
-        getJson<{data:Task[]}>("/api/tasks")
+        getJson<{data:Task[]}>("/api/tasks"),
+        getJson<{data:Invoice[]}>("/api/invoices")
       ]);
       setData(dashboard); setContacts(contactRows.data ?? []); setCompanies(companyRows.data ?? []);
       setLeads(leadRows.data ?? []); setOpportunities(opportunityRows.data ?? []);
       setProspects(prospectRows.data ?? []); setActivities(activityRows.data ?? []);
       setAppointments(appointmentRows.data ?? []);
       setInbox(inboxRows.data ?? []);
-      setCampaigns(campaignRows.data ?? []); setWorkflows(workflowRows.data ?? []); setTasks(taskRows.data ?? []);
+      setCampaigns(campaignRows.data ?? []); setWorkflows(workflowRows.data ?? []); setTasks(taskRows.data ?? []); setInvoices(invoiceRows.data ?? []);
     } catch(e) {
       setError(e instanceof Error ? e.message : "Unable to load CRM");
     } finally { setLoading(false); }
@@ -86,6 +89,7 @@ export default function App() {
   const filteredCampaigns = useMemo(() => filterRows(campaigns, search, ["name","description","status"]), [campaigns,search]);
   const filteredWorkflows = useMemo(() => filterRows(workflows, search, ["name","trigger","condition","action","goal"]), [workflows,search]);
   const filteredTasks = useMemo(() => filterRows(tasks, search, ["title","detail","status","lead_name","lead_email","lead_company"]), [tasks,search]);
+  const filteredInvoices = useMemo(() => filterRows(invoices, search, ["number","customer_name","customer_email","status","currency"]), [invoices,search]);
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -116,8 +120,7 @@ export default function App() {
       {active === "Tasks" && <TasksView rows={filteredTasks} search={search} setSearch={setSearch} leads={leads} onAdd={()=>setModal("task")} onSaved={loadAll}/>}
       {active === "Campaigns" && <CampaignsView rows={filteredCampaigns} search={search} setSearch={setSearch} onAdd={()=>setModal("campaign")} />}
       {active === "Workflows" && <WorkflowsView rows={filteredWorkflows} search={search} setSearch={setSearch} onSaved={loadAll} onAdd={()=>setModal("workflow")} />}
-      {active === "Invoices" &&
-        <section className="coming-card"><div className="coming-icon">✦</div><p className="eyebrow">{active.toUpperCase()}</p><h2>{active} workspace</h2><p>The CRM foundation is ready. This module will plug into the unified workspace instead of becoming a separate disconnected screen.</p><div className="coming-meta">Connected to Neon · Netlify Functions · Jabari CRM</div></section>}
+      {active === "Invoices" && <InvoicesView rows={filteredInvoices} search={search} setSearch={setSearch} onAdd={()=>setModal("invoice")} onSaved={loadAll}/>}
 
       {modal === "company" && <CompanyForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "contact" && <ContactForm companies={companies} onClose={()=>setModal(null)} onSaved={loadAll}/>}
@@ -126,6 +129,7 @@ export default function App() {
       {modal === "campaign" && <CampaignForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "workflow" && <WorkflowForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "task" && <TaskForm leads={leads} onClose={()=>setModal(null)} onSaved={loadAll}/>}
+      {modal === "invoice" && <InvoiceForm contacts={contacts} leads={leads} opportunities={opportunities} onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {selectedRecord && <RecordDrawer kind={selectedRecord.kind} id={selectedRecord.id} contacts={contacts} companies={companies} leads={leads} opportunities={opportunities} activities={activities} appointments={appointments} onClose={()=>setSelectedRecord(null)} onRefresh={loadAll}/>}
     </main>
   </div>;
@@ -322,12 +326,25 @@ function ActivityView({rows,search,setSearch}:{rows:Activity[];search:string;set
 
 function AppointmentsView({rows,search,setSearch,contacts,leads,onSaved}:{rows:Appointment[];search:string;setSearch:(v:string)=>void;contacts:Contact[];leads:Lead[];onSaved:()=>Promise<void>}) {
   const [show,setShow]=useState(false);
-  return <><Workspace title="Appointments" subtitle="Keep scheduled conversations connected to the people and leads they belong to." search={search} setSearch={setSearch} addLabel="Add appointment" onAdd={()=>setShow(true)} count={rows.length}>
-    <Table headers={["Appointment","Contact / Lead","When","Status","Location"]}>{rows.map(a=><tr key={a.id}><td><strong>{a.title}</strong><small>{a.description || "No description"}</small></td><td>{a.contact_name || a.lead_name || "Unlinked"}</td><td>{new Date(a.start_at).toLocaleString()}<small>to {new Date(a.end_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></td><td><Badge text={a.status}/></td><td>{a.location}</td></tr>)}</Table>
+  const [view,setView]=useState<"calendar"|"list">("calendar");
+  const [cursor,setCursor]=useState(()=>new Date());
+  const startOfWeek=(d:Date)=>{const x=new Date(d); x.setHours(0,0,0,0); const day=x.getDay(); x.setDate(x.getDate()-day); return x;};
+  const weekStart=startOfWeek(cursor);
+  const days=Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(d.getDate()+i);return d;});
+  const dayKey=(d:Date)=>`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const appointmentsFor=(d:Date)=>rows.filter(a=>dayKey(new Date(a.start_at))===dayKey(d)).sort((a,b)=>a.start_at-b.start_at);
+  const monthLabel=cursor.toLocaleDateString([], {month:"long",year:"numeric"});
+  const goWeek=(delta:number)=>setCursor(d=>{const x=new Date(d);x.setDate(x.getDate()+delta*7);return x;});
+  const goToday=()=>setCursor(new Date());
+  return <><Workspace title="Appointments" subtitle="Schedule and manage conversations from a calendar connected to your CRM records." search={search} setSearch={setSearch} addLabel="Add appointment" onAdd={()=>setShow(true)} count={rows.length}>
+    <div className="calendar-toolbar">
+      <div className="calendar-nav"><button className="table-action" onClick={()=>goWeek(-1)}>←</button><button className="table-action" onClick={goToday}>Today</button><button className="table-action" onClick={()=>goWeek(1)}>→</button><strong>{monthLabel}</strong></div>
+      <div className="view-toggle"><button className={view==="calendar"?"table-action active-toggle":"table-action"} onClick={()=>setView("calendar")}>Calendar</button><button className={view==="list"?"table-action active-toggle":"table-action"} onClick={()=>setView("list")}>List</button></div>
+    </div>
+    {view==="calendar" ? <div className="calendar-week"><div className="calendar-week-head">{days.map(d=><div key={dayKey(d)} className={dayKey(d)===dayKey(new Date())?"calendar-day-head today":"calendar-day-head"}><span>{d.toLocaleDateString([], {weekday:"short"})}</span><strong>{d.getDate()}</strong></div>)}</div><div className="calendar-week-grid">{days.map(d=><div key={dayKey(d)} className="calendar-day"><div className="calendar-day-events">{appointmentsFor(d).map(a=><div className="calendar-event" key={a.id}><strong>{a.title}</strong><span>{new Date(a.start_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span><small>{a.contact_name || a.lead_name || a.location}</small></div>)}{!appointmentsFor(d).length&&<span className="calendar-empty">No events</span>}</div></div>)}</div></div> : <Table headers={["Appointment","Contact / Lead","When","Status","Location"]}>{rows.map(a=><tr key={a.id}><td><strong>{a.title}</strong><small>{a.description || "No description"}</small></td><td>{a.contact_name || a.lead_name || "Unlinked"}</td><td>{new Date(a.start_at).toLocaleString()}<small>to {new Date(a.end_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</small></td><td><Badge text={a.status}/></td><td>{a.location}</td></tr>)}</Table>}
     {!rows.length && <Empty text="No appointments scheduled."/>}
   </Workspace>{show&&<AppointmentForm contacts={contacts} leads={leads} onClose={()=>setShow(false)} onSaved={async()=>{await onSaved();setShow(false)}}/>}</>;
 }
-
 function AppointmentForm({contacts,leads,onClose,onSaved}:{contacts:Contact[];leads:Lead[];onClose:()=>void;onSaved:()=>Promise<void>}) {
   const [title,setTitle]=useState(""); const [description,setDescription]=useState(""); const [contactId,setContactId]=useState(""); const [leadId,setLeadId]=useState("");
   const [start,setStart]=useState(""); const [end,setEnd]=useState(""); const [location,setLocation]=useState("online"); const [status,setStatus]=useState("scheduled"); const [meetingUrl,setMeetingUrl]=useState(""); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
@@ -381,6 +398,23 @@ function TaskForm({leads,onClose,onSaved}:{leads:Lead[];onClose:()=>void;onSaved
   return <Modal title="Add task" onClose={onClose}><form onSubmit={submit}><label className="field"><span>Lead *</span><select required value={leadId} onChange={e=>setLeadId(e.target.value)}><option value="">Select lead</option>{leads.map(l=><option key={l.id} value={l.id}>{l.name} · {l.company}</option>)}</select></label><Field label="Task title" name="title" value={title} onChange={setTitle} placeholder="Send proposal"/><Textarea label="Details" value={detail} onChange={setDetail}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
 }
 
+function InvoicesView({rows,search,setSearch,onAdd,onSaved}:{rows:Invoice[];search:string;setSearch:(v:string)=>void;onAdd:()=>void;onSaved:()=>Promise<void>}) {
+  const markPaid=async(id:string)=>{const r=await fetch("/api/invoices",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status:"paid"})});if(r.ok) await onSaved();};
+  const outstanding=rows.filter(i=>i.status!=="paid").reduce((sum,i)=>sum+Number(i.total||0),0); const paid=rows.reduce((sum,i)=>sum+Number(i.paid_amount||0),0);
+  return <Workspace title="Invoices" subtitle="Create, track and close client invoices from the same CRM workspace." search={search} setSearch={setSearch} addLabel="Create invoice" onAdd={onAdd} count={rows.length}>
+    <div className="summary-strip"><div><span>Invoices</span><strong>{rows.length}</strong></div><div><span>Outstanding</span><strong>{formatMoney(outstanding)}</strong></div><div><span>Recorded paid</span><strong>{formatMoney(paid)}</strong></div></div>
+    <Table headers={["Invoice","Customer","Total","Status","Due","Items","Actions"]}>{rows.map(i=><tr key={i.id}><td><strong>{i.number}</strong><small>{formatDate(i.created_at)}</small></td><td>{i.customer_name}<small>{i.customer_email}</small></td><td><strong>{formatCurrency(i.total,i.currency)}</strong></td><td><Badge text={i.status}/></td><td>{i.due_at ? formatDate(i.due_at) : "—"}</td><td>{i.item_count}</td><td>{i.status!=="paid" ? <button className="table-action" onClick={()=>markPaid(i.id)}>Mark paid</button> : <span className="muted">Paid</span>}</td></tr>)}</Table>
+    {!rows.length && <Empty text="No invoices yet. Create your first client invoice."/>}
+  </Workspace>;
+}
+
+function InvoiceForm({contacts,leads,opportunities,onClose,onSaved}:{contacts:Contact[];leads:Lead[];opportunities:Opportunity[];onClose:()=>void;onSaved:()=>Promise<void>}) {
+  const [customerName,setCustomerName]=useState(""); const [customerEmail,setCustomerEmail]=useState(""); const [contactId,setContactId]=useState(""); const [leadId,setLeadId]=useState(""); const [opportunityId,setOpportunityId]=useState(""); const [currency,setCurrency]=useState("NGN"); const [description,setDescription]=useState("Service"); const [quantity,setQuantity]=useState("1"); const [unitPrice,setUnitPrice]=useState("0"); const [dueAt,setDueAt]=useState(""); const [notes,setNotes]=useState(""); const [saving,setSaving]=useState(false); const [error,setError]=useState("");
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setSaving(true);setError("");try{const r=await fetch("/api/invoices",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer_name:customerName,customer_email:customerEmail,contact_id:contactId||undefined,lead_id:leadId||undefined,opportunity_id:opportunityId||undefined,currency,items:[{description,quantity:Number(quantity)||1,unit_price:Number(unitPrice)||0}],due_at:dueAt?new Date(dueAt+"T23:59:59").getTime():undefined,notes})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to create invoice");await onSaved();onClose();}catch(x){setError(x instanceof Error?x.message:"Unable to create invoice")}finally{setSaving(false)}};
+  const pickContact=(id:string)=>{setContactId(id);const c=contacts.find(x=>x.id===id);if(c){setCustomerName(c.name);setCustomerEmail(c.email)}};
+  return <Modal title="Create invoice" onClose={onClose}><form onSubmit={submit}><div className="form-grid"><label className="field"><span>Contact</span><select value={contactId} onChange={e=>pickContact(e.target.value)}><option value="">Manual customer</option>{contacts.map(c=><option value={c.id} key={c.id}>{c.name} · {c.email}</option>)}</select></label><Field label="Customer name" name="customer_name" value={customerName} onChange={setCustomerName} placeholder="Client name"/><Field label="Customer email" name="customer_email" value={customerEmail} onChange={setCustomerEmail} placeholder="client@example.com" type="email"/><label className="field"><span>Currency</span><select value={currency} onChange={e=>setCurrency(e.target.value)}><option>NGN</option><option>USD</option><option>GBP</option><option>EUR</option></select></label></div><div className="form-grid"><Field label="Line item" name="description" value={description} onChange={setDescription} placeholder="Website project"/><Field label="Quantity" name="quantity" value={quantity} onChange={setQuantity} type="number"/><Field label="Unit price" name="unitPrice" value={unitPrice} onChange={setUnitPrice} type="number"/><Field label="Due date" name="dueAt" value={dueAt} onChange={setDueAt} type="date" required={false}/></div><div className="form-grid"><label className="field"><span>Lead</span><select value={leadId} onChange={e=>setLeadId(e.target.value)}><option value="">None</option>{leads.map(l=><option value={l.id} key={l.id}>{l.name} · {l.company}</option>)}</select></label><label className="field"><span>Opportunity</span><select value={opportunityId} onChange={e=>setOpportunityId(e.target.value)}><option value="">None</option>{opportunities.map(o=><option value={o.id} key={o.id}>{o.name}</option>)}</select></label></div><Textarea label="Notes" value={notes} onChange={setNotes} required={false}/>{error&&<div className="form-error">{error}</div>}<FormActions onClose={onClose} saving={saving}/></form></Modal>;
+}
+
 function Workspace({title,subtitle,search,setSearch,addLabel,onAdd,count,children}:{title:string;subtitle:string;search:string;setSearch:(v:string)=>void;addLabel?:string;onAdd?:()=>void;count:number;children:ReactNode}) {
   return <section className="workspace">
     <div className="workspace-head"><div><p className="eyebrow">CRM / {title.toUpperCase()}</p><h2>{title}</h2><p>{subtitle}</p></div>{onAdd && addLabel ? <button className="primary-btn" onClick={onAdd}>+ {addLabel}</button> : null}</div>
@@ -398,6 +432,7 @@ function Row({title,meta}:{title:string;meta:string}) { return <div className="c
 function Empty({text}:{text:string}) { return <div className="empty">{text}</div>; }
 function Badge({text}:{text:string}) { return <span className="badge">{text || "—"}</span>; }
 function formatMoney(value:number) { return new Intl.NumberFormat(undefined,{style:"currency",currency:"NGN",maximumFractionDigits:0}).format(value || 0); }
+function formatCurrency(value:number,currency:string) { return new Intl.NumberFormat(undefined,{style:"currency",currency:currency||"NGN",maximumFractionDigits:0}).format(value || 0); }
 function formatDate(value:number) { return value ? new Date(value).toLocaleDateString() : "—"; }
 function navIcon(s:string) { const icons:Record<string,string>={ "Command Center":"⌂",Prospects:"◌",Contacts:"◎",Leads:"◈",Companies:"▦",Opportunities:"◇",Pipeline:"▥",Activity:"⌁",Appointments:"◷",Tasks:"✓",Campaigns:"◉",Workflows:"⌘",Invoices:"▤",Inbox:"✉" }; return icons[s] || "•"; }
 
