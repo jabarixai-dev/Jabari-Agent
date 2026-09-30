@@ -54,10 +54,19 @@ export default async function handler(request: Request) {
       recentOpportunities,
       activity,
     });
-  } catch (error) {
-    console.error(error);
-    return json({ error: "Unable to load dashboard data" }, 500);
+    } catch (error) {
+    console.error("Dashboard query failed", error);
+
+    const message =
+      error instanceof Error ? error.message : "Unknown database error";
+
+    return json(
+      {
+        error: "Unable to load dashboard data",
+        diagnostic: message,
+      },
+      500,
+    );
   }
-}
 
 export const config: Config = { path: "/api/dashboard" };
