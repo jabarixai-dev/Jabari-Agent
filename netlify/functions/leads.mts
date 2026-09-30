@@ -54,7 +54,21 @@ export default async function handler(request: Request) {
       return json({ data: rows[0] }, 201);
     }
 
-    return methodNotAllowed(["GET", "POST"]);
+    if (request.method === "PATCH") {
+      const body = await request.json().catch(() => ({}));
+      const id = String(body.id || "").trim();
+      const status = String(body.status || "").trim();
+      if (!id || !status) return json({ error: "id and status are required" }, 400);
+      if (!["new", "contacted", "qualified", "won", "lost"].includes(status)) return json({ error: "invalid status" }, 400);
+      const rows = await sql`
+        UPDATE leads SET status=${status}, updated_at=${Date.now()} WHERE id=${id}
+        RETURNING *
+      `;
+      if (!rows.length) return json({ error: "Lead not found" }, 404);
+      return json({ data: rows[0] });
+    }
+
+    return methodNotAllowed(["GET", "POST", "PATCH"]);
   } catch (error) {
     console.error(error);
     return json({ error: "Unable to process leads request" }, 500);
