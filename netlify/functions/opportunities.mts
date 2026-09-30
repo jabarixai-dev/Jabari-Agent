@@ -1,6 +1,6 @@
 import type { Config } from "@netlify/functions";
-import { sql } from "./lib/db.mts";
-import { json, methodNotAllowed, readJson } from "./lib/http.mts";
+import { sql } from "./lib/db";
+import { json, methodNotAllowed, readJson } from "./lib/http";
 
 export default async function handler(request: Request) {
   try {
