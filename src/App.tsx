@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-const sections = ["Command Center", "Prospects", "Contacts", "Leads", "Companies", "Opportunities", "Activity", "Appointments", "Tasks", "Campaigns", "Workflows", "Invoices", "Inbox"];
+const sections = ["Command Center", "Prospects", "Contacts", "Leads", "Companies", "Opportunities", "Pipeline", "Activity", "Appointments", "Tasks", "Campaigns", "Workflows", "Invoices", "Inbox"];
 
 type Contact = { id:string; name:string; email:string; company:string; phone?:string; source:string; job_title?:string; website?:string; notes?:string; company_id?:string; created_at:number };
 type Company = { id:string; name:string; website?:string; industry?:string; notes?:string; created_at:number };
@@ -34,6 +34,7 @@ export default function App() {
   const [error,setError] = useState("");
   const [search,setSearch] = useState("");
   const [modal,setModal] = useState<"contact"|"company"|"lead"|"opportunity"|null>(null);
+  const [selectedRecord,setSelectedRecord] = useState<{kind:string;id:string}|null>(null);
 
   const loadAll = async () => {
     setLoading(true); setError("");
@@ -88,7 +89,8 @@ export default function App() {
       {active === "Contacts" && <ContactsView rows={filteredContacts} search={search} setSearch={setSearch} onAdd={()=>setModal("contact")} />}
       {active === "Companies" && <CompaniesView rows={filteredCompanies} search={search} setSearch={setSearch} onAdd={()=>setModal("company")} />}
       {active === "Leads" && <LeadsView rows={filteredLeads} search={search} setSearch={setSearch} onAdd={()=>setModal("lead")} />}
-      {active === "Opportunities" && <OpportunitiesView rows={filteredOpportunities} search={search} setSearch={setSearch} onAdd={()=>setModal("opportunity")} />}
+      {active === "Opportunities" && <OpportunitiesView rows={filteredOpportunities} search={search} setSearch={setSearch} onAdd={()=>setModal("opportunity")} onOpen={(id)=>setSelectedRecord({kind:"opportunity",id})} />}
+      {active === "Pipeline" && <PipelineView rows={opportunities} onOpen={(id)=>setSelectedRecord({kind:"opportunity",id})} onStageChanged={loadAll}/>}
       {active === "Activity" && <ActivityView rows={filteredActivities} search={search} setSearch={setSearch}/>}
       {active === "Appointments" && <AppointmentsView rows={filteredAppointments} search={search} setSearch={setSearch} contacts={contacts} leads={leads} onSaved={loadAll}/>}
       {["Tasks","Campaigns","Workflows","Invoices","Inbox"].includes(active) &&
@@ -98,6 +100,7 @@ export default function App() {
       {modal === "contact" && <ContactForm companies={companies} onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "lead" && <LeadForm onClose={()=>setModal(null)} onSaved={loadAll}/>}
       {modal === "opportunity" && <OpportunityForm leads={leads} contacts={contacts} companies={companies} onClose={()=>setModal(null)} onSaved={loadAll}/>}
+      {selectedRecord && <RecordDrawer kind={selectedRecord.kind} id={selectedRecord.id} contacts={contacts} companies={companies} leads={leads} opportunities={opportunities} activities={activities} appointments={appointments} onClose={()=>setSelectedRecord(null)} onRefresh={loadAll}/>}
     </main>
   </div>;
 }
@@ -150,12 +153,29 @@ function LeadsView({rows,search,setSearch,onAdd}:{rows:Lead[];search:string;setS
     {!rows.length && <Empty text="No leads match your search."/>}
   </Workspace>;
 }
-function OpportunitiesView({rows,search,setSearch,onAdd}:{rows:Opportunity[];search:string;setSearch:(v:string)=>void;onAdd:()=>void}) {
+function OpportunitiesView({rows,search,setSearch,onAdd,onOpen}:{rows:Opportunity[];search:string;setSearch:(v:string)=>void;onAdd:()=>void;onOpen:(id:string)=>void}) {
   return <Workspace title="Opportunities" subtitle="Track qualified deals, value, probability and expected close dates." search={search} setSearch={setSearch} addLabel="Add opportunity" onAdd={onAdd} count={rows.length}>
-    <Table headers={["Opportunity","Company","Stage","Value","Probability","Owner"]}>{rows.map(o=><tr key={o.id}><td><strong>{o.name}</strong><small>{o.lead_name || "Linked lead"}</small></td><td>{o.company_name || "—"}</td><td><Badge text={o.stage}/></td><td>{formatMoney(o.value)}</td><td>{o.probability}%</td><td>{o.owner}</td></tr>)}</Table>
+    <Table headers={["Opportunity","Company","Stage","Value","Probability","Owner",""]}>{rows.map(o=><tr key={o.id}><td><button className="link-btn" onClick={()=>onOpen(o.id)}><strong>{o.name}</strong><small>{o.lead_name || "Linked lead"}</small></button></td><td>{o.company_name || "—"}</td><td><Badge text={o.stage}/></td><td>{formatMoney(o.value)}</td><td>{o.probability}%</td><td>{o.owner}</td><td><button className="table-action" onClick={()=>onOpen(o.id)}>Open</button></td></tr>)}</Table>
     {!rows.length && <Empty text="No opportunities match your search."/>}
   </Workspace>;
 }
+
+const pipelineStages = ["qualified","proposal","negotiation","closed_won","closed_lost"];
+function PipelineView({rows,onOpen,onStageChanged}:{rows:Opportunity[];onOpen:(id:string)=>void;onStageChanged:()=>Promise<void>}) {
+  const [busy,setBusy]=useState<string|null>(null); const [message,setMessage]=useState("");
+  const move=async(id:string,stage:string)=>{setBusy(id);setMessage("");try{const r=await fetch("/api/opportunities",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,stage})});const b=await r.json();if(!r.ok)throw new Error(b.error||"Unable to move opportunity");await onStageChanged()}catch(e){setMessage(e instanceof Error?e.message:"Unable to move opportunity")}finally{setBusy(null)}};
+  const total=rows.reduce((sum,o)=>sum+Number(o.value||0),0);
+  return <section className="pipeline-workspace"><div className="workspace-head"><div><p className="eyebrow">CRM / PIPELINE</p><h2>Opportunity Pipeline</h2><p>Move deals through the same lifecycle that powers your sales workspace.</p></div><div className="pipeline-summary"><strong>{formatMoney(total)}</strong><span>pipeline value</span></div></div>{message&&<div className="info-note">{message}</div>}<div className="pipeline-board">{pipelineStages.map(stage=>{const items=rows.filter(o=>o.stage===stage);return <div className="pipeline-column" key={stage}><div className="pipeline-column-head"><div><strong>{stage.replaceAll("_"," ")}</strong><small>{items.length} deal{items.length===1?"":"s"}</small></div><span>{formatMoney(items.reduce((sum,o)=>sum+Number(o.value||0),0))}</span></div>{items.map(o=><article className="deal-card" key={o.id} onClick={()=>onOpen(o.id)}><div className="deal-card-top"><strong>{o.name}</strong><Badge text={`${o.probability}%`}/></div><small>{o.company_name || o.lead_name || "Unlinked account"}</small><div className="deal-value">{formatMoney(o.value)}</div><div className="deal-meta"><span>{o.owner || "Unassigned"}</span><span>{o.expected_close_at ? formatDate(o.expected_close_at) : "No close date"}</span></div><select value={o.stage} disabled={busy===o.id} onClick={e=>e.stopPropagation()} onChange={e=>move(o.id,e.target.value)}>{pipelineStages.map(s=><option key={s}>{s}</option>)}</select></article>)}{!items.length&&<div className="pipeline-empty">Drop or move deals here</div>}</div>})}</div></section>;
+}
+
+function RecordDrawer({kind,id,contacts,companies,leads,opportunities,activities,appointments,onClose,onRefresh}:{kind:string;id:string;contacts:Contact[];companies:Company[];leads:Lead[];opportunities:Opportunity[];activities:Activity[];appointments:Appointment[];onClose:()=>void;onRefresh:()=>Promise<void>}) {
+  const opportunity=opportunities.find(o=>o.id===id); const contact=contacts.find(c=>c.id===id); const company=companies.find(c=>c.id===id); const lead=leads.find(l=>l.id===id);
+  const record=opportunity||contact||company||lead; if(!record) return null;
+  const relatedActivities=activities.filter(a=>a.contact_id===id||a.lead_id===id); const relatedAppointments=appointments.filter(a=>a.contact_id===id||a.lead_id===id);
+  const title=(record as any).name || "Record"; const subtitle=kind==="opportunity" ? `${(record as Opportunity).stage} · ${formatMoney((record as Opportunity).value)}` : ((record as any).email || (record as any).company || "CRM record");
+  return <div className="drawer-backdrop" onClick={onClose}><aside className="record-drawer" onClick={e=>e.stopPropagation()}><div className="drawer-head"><div><p className="eyebrow">CRM RECORD</p><h2>{title}</h2><p>{subtitle}</p></div><button className="icon-btn" onClick={onClose}>×</button></div><div className="drawer-actions"><button className="ghost-btn">Add note</button><button className="primary-btn" onClick={onRefresh}>Refresh</button></div><div className="record-summary"><div><span>Type</span><strong>{kind}</strong></div><div><span>Status</span><strong>{(record as any).status || (record as any).stage || "active"}</strong></div>{kind==="opportunity"&&<div><span>Probability</span><strong>{(record as Opportunity).probability}%</strong></div>}</div><section className="drawer-section"><h3>Related records</h3><div className="related-grid">{opportunity&&<div><span>Lead</span><strong>{opportunity.lead_name || opportunity.lead_id}</strong></div>}{opportunity&&<div><span>Company</span><strong>{opportunity.company_name || opportunity.company_id || "—"}</strong></div>}{contact&&<div><span>Company</span><strong>{contact.company}</strong></div>}{lead&&<div><span>Request</span><strong>{lead.request}</strong></div>}</div></section><section className="drawer-section"><h3>Timeline</h3>{[...relatedActivities.map(a=>({date:a.created_at,title:a.title,detail:a.detail,type:a.type})),...relatedAppointments.map(a=>({date:a.start_at,title:a.title,detail:a.description,type:"appointment"}))].sort((a,b)=>b.date-a.date).map((item,i)=><div className="drawer-timeline" key={i}><span className="timeline-dot"/><div><strong>{item.title}</strong><small>{item.type} · {new Date(item.date).toLocaleString()}</small><p>{item.detail || "No details"}</p></div></div>)}{!relatedActivities.length&&!relatedAppointments.length&&<Empty text="No related activity yet."/>}</section></aside></div>;
+}
+
 
 
 function ProspectsView({rows,search,setSearch,onConverted}:{rows:Prospect[];search:string;setSearch:(v:string)=>void;onConverted:()=>Promise<void>}) {
@@ -227,7 +247,7 @@ function Empty({text}:{text:string}) { return <div className="empty">{text}</div
 function Badge({text}:{text:string}) { return <span className="badge">{text || "—"}</span>; }
 function formatMoney(value:number) { return new Intl.NumberFormat(undefined,{style:"currency",currency:"NGN",maximumFractionDigits:0}).format(value || 0); }
 function formatDate(value:number) { return value ? new Date(value).toLocaleDateString() : "—"; }
-function navIcon(s:string) { const icons:Record<string,string>={ "Command Center":"⌂",Prospects:"◌",Contacts:"◎",Leads:"◈",Companies:"▦",Opportunities:"◇",Activity:"⌁",Appointments:"◷",Tasks:"✓",Campaigns:"◉",Workflows:"⌘",Invoices:"▤",Inbox:"✉" }; return icons[s] || "•"; }
+function navIcon(s:string) { const icons:Record<string,string>={ "Command Center":"⌂",Prospects:"◌",Contacts:"◎",Leads:"◈",Companies:"▦",Opportunities:"◇",Pipeline:"▥",Activity:"⌁",Appointments:"◷",Tasks:"✓",Campaigns:"◉",Workflows:"⌘",Invoices:"▤",Inbox:"✉" }; return icons[s] || "•"; }
 
 function Modal({title,children,onClose}:{title:string;children:ReactNode;onClose:()=>void}) {
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal"><div className="modal-head"><div><p className="eyebrow">JABARI CRM</p><h3>{title}</h3></div><button className="close-btn" onClick={onClose}>×</button></div>{children}</div></div>;
