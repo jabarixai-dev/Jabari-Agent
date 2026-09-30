@@ -1,1 +1,0 @@
-import type {Config} from "@netlify/functions"; export default async()=>new Response(JSON.stringify({ok:true,service:"jabari-agent",timestamp:new Date().toISOString()}),{headers:{"content-type":"application/json"}}); export const config:Config={path:"/api/health"};
