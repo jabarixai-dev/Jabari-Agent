@@ -1,393 +1,466 @@
-import { neon } from "@neondatabase/serverless";
+import { useEffect, useState, type ReactNode } from "react";
 
-const databaseUrl = process.env.DATABASE_URL;
+type Lead = {
+  id: string;
+  name: string;
+  email: string;
+  company: string;
+};
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is not configured");
+type OutreachDraft = {
+  id: string;
+  lead_id: string;
+  subject: string;
+  body_text: string;
+  status: string;
+  sent_at?: number;
+  created_at: number;
+  updated_at: number;
+  lead_name?: string;
+  lead_email?: string;
+  lead_company?: string;
+  event_count?: number;
+  last_event_type?: string;
+  last_event_at?: number;
+};
+
+type OutreachEvent = {
+  id: string;
+  kind: string;
+  created_at: number;
+};
+
+type Props = {
+  rows: OutreachDraft[];
+  search: string;
+  setSearch: (value: string) => void;
+  leads: Lead[];
+  onSaved: () => Promise<void>;
+};
+
+function formatDate(value?: number) {
+  return value ? new Date(value).toLocaleDateString() : "—";
 }
 
-const sql = neon(databaseUrl);
+function formatDateTime(value?: number) {
+  return value ? new Date(value).toLocaleString() : "—";
+}
 
-export default async function handler(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const draftId = url.searchParams.get("draft_id");
+function Badge({ text }: { text?: string }) {
+  return <span className="badge">{text || "—"}</span>;
+}
 
-    /*
-     * GET
-     * /api/outreach
-     *
-     * Returns all outreach drafts.
-     *
-     * GET
-     * /api/outreach?draft_id=...
-     *
-     * Returns events for one draft.
-     */
-    if (request.method === "GET") {
-      if (draftId) {
-        const events = await sql`
-          SELECT
-            id,
-            kind,
-            lead_id,
-            prospect_id,
-            draft_id,
-            metadata,
-            created_at
-          FROM outreach_events
-          WHERE draft_id = ${draftId}
-          ORDER BY created_at DESC
-          LIMIT 100
-        `;
+function Empty({ text }: { text: string }) {
+  return <div className="empty">{text}</div>;
+}
 
-        return Response.json({
-          events,
-        });
-      }
+function Workspace({
+  title,
+  subtitle,
+  search,
+  setSearch,
+  addLabel,
+  onAdd,
+  count,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  search: string;
+  setSearch: (value: string) => void;
+  addLabel: string;
+  onAdd: () => void;
+  count: number;
+  children: ReactNode;
+}) {
+  return (
+    <section className="workspace">
+      <div className="workspace-head">
+        <div>
+          <p className="eyebrow">CRM / {title.toUpperCase()}</p>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
 
-      const rows = await sql`
-        SELECT
-          d.id,
-          d.lead_id,
-          d.subject,
-          d.body_text,
-          d.status,
-          d.sent_at,
-          d.created_at,
-          d.updated_at,
+        <button className="primary-btn" onClick={onAdd}>
+          + {addLabel}
+        </button>
+      </div>
 
-          l.name AS lead_name,
-          l.email AS lead_email,
-          l.company AS lead_company,
+      <div className="toolbar">
+        <div className="search-box">
+          ⌕
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={`Search ${title.toLowerCase()}…`}
+          />
+        </div>
 
-          COUNT(e.id)::int AS event_count,
+        <span className="result-count">
+          {count} records
+        </span>
+      </div>
 
-          MAX(e.created_at) AS last_event_at,
+      <div className="table-card">
+        {children}
+      </div>
+    </section>
+  );
+}
 
-          (
-            ARRAY_AGG(
-              e.kind
-              ORDER BY e.created_at DESC
-            )
-          )[1] AS last_event_type
+export default function OutreachView({
+  rows,
+  search,
+  setSearch,
+  leads,
+  onSaved,
+}: Props) {
+  const [selected, setSelected] =
+    useState<OutreachDraft | null>(null);
 
-        FROM outreach_drafts d
+  const [subject, setSubject] =
+    useState("");
 
-        JOIN leads l
-          ON l.id = d.lead_id
+  const [body, setBody] =
+    useState("");
 
-        LEFT JOIN outreach_events e
-          ON e.draft_id = d.id
+  const [leadId, setLeadId] =
+    useState("");
 
-        GROUP BY
-          d.id,
-          l.name,
-          l.email,
-          l.company
+  const [status, setStatus] =
+    useState("draft");
 
-        ORDER BY d.updated_at DESC
+  const [busy, setBusy] =
+    useState(false);
 
-        LIMIT 200
-      `;
+  const [events, setEvents] =
+    useState<OutreachEvent[]>([]);
 
-      return Response.json({
-        data: rows,
-      });
+  const [error, setError] =
+    useState("");
+
+  useEffect(() => {
+    if (!selected) {
+      setSubject("");
+      setBody("");
+      setLeadId(leads[0]?.id || "");
+      setStatus("draft");
+      setEvents([]);
+      return;
     }
 
-    /*
-     * Parse request body for POST/PATCH.
-     */
-    const body = await request.json();
+    setSubject(selected.subject);
+    setBody(selected.body_text);
+    setLeadId(selected.lead_id);
+    setStatus(selected.status);
 
-    /*
-     * POST
-     *
-     * Creates a new outreach draft.
-     */
-    if (request.method === "POST") {
-      const {
-        lead_id,
-        subject,
-        body_text,
-        status = "draft",
-      } = body;
+    fetch(
+      `/api/outreach?draft_id=${encodeURIComponent(
+        selected.id
+      )}`
+    )
+      .then(async (response) => {
+        const data = await response.json();
 
-      if (
-        !lead_id ||
-        !subject?.trim() ||
-        !body_text?.trim()
-      ) {
-        return Response.json(
-          {
-            error:
-              "lead_id, subject and body_text are required",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
+        if (response.ok) {
+          setEvents(data.events || []);
+        } else {
+          setEvents([]);
+        }
+      })
+      .catch(() => {
+        setEvents([]);
+      });
+  }, [selected?.id, leads]);
 
-      /*
-       * Make sure the selected lead actually exists.
-       */
-      const lead = await sql`
-        SELECT
-          id,
-          name,
-          email,
-          company
-        FROM leads
-        WHERE id = ${lead_id}
-        LIMIT 1
-      `;
+  const save = async (
+    nextStatus = status
+  ) => {
+    if (
+      !leadId ||
+      !subject.trim() ||
+      !body.trim()
+    ) {
+      setError(
+        "Select a lead and complete the subject and message."
+      );
+      return;
+    }
 
-      if (!lead.length) {
-        return Response.json(
-          {
-            error: "Lead not found",
-          },
-          {
-            status: 404,
-          }
-        );
-      }
+    setBusy(true);
+    setError("");
 
-      const now = Date.now();
-      const id = crypto.randomUUID();
-
-      const rows = await sql`
-        INSERT INTO outreach_drafts
-          (
-            id,
-            lead_id,
-            subject,
-            body_text,
-            status,
-            created_at,
-            updated_at
-          )
-
-        VALUES
-          (
-            ${id},
-            ${lead_id},
-            ${subject.trim()},
-            ${body_text.trim()},
-            ${status},
-            ${now},
-            ${now}
-          )
-
-        RETURNING *
-      `;
-
-      /*
-       * Record the creation event.
-       */
-      await sql`
-        INSERT INTO outreach_events
-          (
-            id,
-            kind,
-            lead_id,
-            draft_id,
-            metadata,
-            created_at
-          )
-
-        VALUES
-          (
-            ${crypto.randomUUID()},
-            'draft_created',
-            ${lead_id},
-            ${id},
-            ${JSON.stringify({
-              status,
-            })}::jsonb,
-            ${now}
-          )
-      `;
-
-      return Response.json(
+    try {
+      const response = await fetch(
+        "/api/outreach",
         {
-          data: rows[0],
-        },
-        {
-          status: 201,
+          method: selected
+            ? "PATCH"
+            : "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            id: selected?.id,
+            lead_id: leadId,
+            subject: subject.trim(),
+            body_text: body.trim(),
+            status: nextStatus,
+          }),
         }
       );
-    }
 
-    /*
-     * PATCH
-     *
-     * Updates an existing outreach draft.
-     */
-    if (request.method === "PATCH") {
-      const {
-        id,
-        lead_id,
-        subject,
-        body_text,
-        status,
-      } = body;
+      const data =
+        await response.json();
 
-      if (!id) {
-        return Response.json(
-          {
-            error: "id is required",
-          },
-          {
-            status: 400,
-          }
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Unable to save outreach draft"
         );
       }
 
-      /*
-       * Confirm the draft exists.
-       */
-      const existing = await sql`
-        SELECT
-          id,
-          lead_id,
-          subject,
-          body_text,
-          status
-        FROM outreach_drafts
-        WHERE id = ${id}
-        LIMIT 1
-      `;
+      setSelected(data.data);
+      setStatus(data.data.status);
 
-      if (!existing.length) {
-        return Response.json(
-          {
-            error: "Draft not found",
-          },
-          {
-            status: 404,
-          }
-        );
-      }
-
-      /*
-       * If a new lead was supplied,
-       * make sure that lead exists too.
-       */
-      if (lead_id) {
-        const lead = await sql`
-          SELECT id
-          FROM leads
-          WHERE id = ${lead_id}
-          LIMIT 1
-        `;
-
-        if (!lead.length) {
-          return Response.json(
-            {
-              error: "Lead not found",
-            },
-            {
-              status: 404,
-            }
-          );
-        }
-      }
-
-      const now = Date.now();
-
-      const rows = await sql`
-        UPDATE outreach_drafts
-
-        SET
-          lead_id = COALESCE(
-            ${lead_id || null},
-            lead_id
-          ),
-
-          subject = COALESCE(
-            ${subject || null},
-            subject
-          ),
-
-          body_text = COALESCE(
-            ${body_text || null},
-            body_text
-          ),
-
-          status = COALESCE(
-            ${status || null},
-            status
-          ),
-
-          updated_at = ${now}
-
-        WHERE id = ${id}
-
-        RETURNING *
-      `;
-
-      /*
-       * Record the appropriate event.
-       */
-      const eventKind =
-        status === "queued"
-          ? "queued"
-          : "draft_updated";
-
-      await sql`
-        INSERT INTO outreach_events
-          (
-            id,
-            kind,
-            lead_id,
-            draft_id,
-            metadata,
-            created_at
-          )
-
-        VALUES
-          (
-            ${crypto.randomUUID()},
-            ${eventKind},
-            ${rows[0].lead_id},
-            ${id},
-            ${JSON.stringify({
-              status: rows[0].status,
-            })}::jsonb,
-            ${now}
-          )
-      `;
-
-      return Response.json({
-        data: rows[0],
-      });
+      await onSaved();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to save outreach draft"
+      );
+    } finally {
+      setBusy(false);
     }
+  };
 
-    /*
-     * Everything else is unsupported.
-     */
-    return Response.json(
-      {
-        error: "Method not allowed",
-      },
-      {
-        status: 405,
-      }
-    );
-  } catch (error) {
-    return Response.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Outreach request failed",
-      },
-      {
-        status: 500,
-      }
-    );
-  }
+  const newDraft = () => {
+    setSelected(null);
+    setLeadId(leads[0]?.id || "");
+    setSubject("");
+    setBody("");
+    setStatus("draft");
+    setEvents([]);
+    setError("");
+  };
+
+  return (
+    <Workspace
+      title="Outreach"
+      subtitle="Create, review and queue personalized outreach while keeping every touchpoint connected to the CRM."
+      search={search}
+      setSearch={setSearch}
+      count={rows.length}
+      addLabel="New draft"
+      onAdd={newDraft}
+    >
+      <div className="outreach-layout">
+
+        <div className="outreach-list">
+          {rows.map((draft) => (
+            <button
+              key={draft.id}
+              type="button"
+              className={
+                selected?.id === draft.id
+                  ? "outreach-row active"
+                  : "outreach-row"
+              }
+              onClick={() =>
+                setSelected(draft)
+              }
+            >
+              <div>
+                <strong>
+                  {draft.subject}
+                </strong>
+
+                <small>
+                  {draft.lead_name ||
+                    "Lead"}{" "}
+                  ·{" "}
+                  {draft.lead_email ||
+                    "No email"}
+                </small>
+              </div>
+
+              <Badge
+                text={draft.status}
+              />
+
+              <span className="outreach-date">
+                {formatDate(
+                  draft.updated_at
+                )}
+              </span>
+            </button>
+          ))}
+
+          {!rows.length && (
+            <Empty
+              text="No outreach drafts yet. Create one from a lead."
+            />
+          )}
+        </div>
+
+        <div className="outreach-editor">
+
+          <div className="outreach-editor-head">
+            <div>
+              <p className="eyebrow">
+                OUTREACH / DRAFT
+              </p>
+
+              <h3>
+                {selected
+                  ? "Edit outreach"
+                  : "New outreach"}
+              </h3>
+            </div>
+
+            {selected && (
+              <Badge
+                text={selected.status}
+              />
+            )}
+          </div>
+
+          <label className="form-label">
+            Lead
+
+            <select
+              value={leadId}
+              onChange={(event) =>
+                setLeadId(
+                  event.target.value
+                )
+              }
+            >
+              <option value="">
+                Select lead
+              </option>
+
+              {leads.map((lead) => (
+                <option
+                  key={lead.id}
+                  value={lead.id}
+                >
+                  {lead.name} ·{" "}
+                  {lead.company}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-label">
+            Subject
+
+            <input
+              value={subject}
+              onChange={(event) =>
+                setSubject(
+                  event.target.value
+                )
+              }
+              placeholder="Personalized subject"
+            />
+          </label>
+
+          <label className="form-label">
+            Message
+
+            <textarea
+              className="outreach-body"
+              value={body}
+              onChange={(event) =>
+                setBody(
+                  event.target.value
+                )
+              }
+              placeholder="Write the outreach message…"
+            />
+          </label>
+
+          {error && (
+            <div className="form-error">
+              {error}
+            </div>
+          )}
+
+          <div className="outreach-actions">
+
+            <button
+              type="button"
+              className="ghost-btn"
+              disabled={busy}
+              onClick={() =>
+                save("draft")
+              }
+            >
+              Save draft
+            </button>
+
+            <button
+              type="button"
+              className="primary-btn"
+              disabled={busy}
+              onClick={() =>
+                save("queued")
+              }
+            >
+              {busy
+                ? "Saving…"
+                : "Queue outreach"}
+            </button>
+
+          </div>
+
+          <div className="outreach-note">
+            Queued means prepared for
+            the sending layer; it does not
+            claim that an email was sent.
+          </div>
+
+          {selected && (
+            <div className="outreach-history">
+
+              <h4>
+                Outreach history
+              </h4>
+
+              {events.length ? (
+                events.map((event) => (
+                  <div
+                    className="outreach-event"
+                    key={event.id}
+                  >
+                    <strong>
+                      {event.kind}
+                    </strong>
+
+                    <span>
+                      {formatDateTime(
+                        event.created_at
+                      )}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <Empty
+                  text="No outreach events recorded yet."
+                />
+              )}
+
+            </div>
+          )}
+
+        </div>
+      </div>
+    </Workspace>
+  );
 }
