@@ -6,28 +6,36 @@ export default async function handler(request: Request) {
   try {
     if (request.method === "GET") {
       const rows = await sql`
-        SELECT * FROM companies ORDER BY created_at DESC LIMIT 200
+        SELECT * FROM companies
+        ORDER BY created_at DESC
+        LIMIT 200
       `;
       return json({ data: rows });
     }
 
     if (request.method === "POST") {
       const body = await readJson<{
-        name: string; domain?: string; industry?: string; phone?: string; email?: string;
-        website?: string; address?: string; notes?: string; owner_id?: string;
+        name: string;
+        website?: string;
+        industry?: string;
+        notes?: string;
       }>(request);
 
-      if (!body.name?.trim()) return json({ error: "name is required" }, 400);
+      if (!body.name?.trim()) {
+        return json({ error: "name is required" }, 400);
+      }
+
+      const now = Date.now();
 
       const rows = await sql`
         INSERT INTO companies
-          (name,domain,industry,phone,email,website,address,notes,owner_id)
+          (name,website,industry,notes,created_at,updated_at)
         VALUES
-          (${body.name.trim()},${body.domain ?? null},${body.industry ?? null},
-           ${body.phone ?? null},${body.email ?? null},${body.website ?? null},
-           ${body.address ?? null},${body.notes ?? null},${body.owner_id ?? null})
+          (${body.name.trim()},${body.website ?? null},${body.industry ?? null},
+           ${body.notes ?? null},${now},${now})
         RETURNING *
       `;
+
       return json({ data: rows[0] }, 201);
     }
 

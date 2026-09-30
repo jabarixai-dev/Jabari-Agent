@@ -17,21 +17,60 @@ export default async function handler(request: Request) {
 
     if (request.method === "POST") {
       const body = await readJson<{
-        first_name: string; last_name?: string; email?: string; phone?: string;
-        job_title?: string; source?: string; company_id?: string; owner_id?: string; notes?: string;
+        name?: string;
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+        company?: string;
+        company_id?: string;
+        phone?: string;
+        source?: string;
+        lead_id?: string;
+        job_title?: string;
+        website?: string;
+        notes?: string;
+        tags?: unknown;
       }>(request);
 
-      if (!body.first_name?.trim()) return json({ error: "first_name is required" }, 400);
+      const name =
+        body.name?.trim() ||
+        [body.first_name?.trim(), body.last_name?.trim()]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
+      if (!name) return json({ error: "name is required" }, 400);
+      if (!body.email?.trim()) return json({ error: "email is required" }, 400);
+      if (!body.company?.trim() && !body.company_id) {
+        return json({ error: "company or company_id is required" }, 400);
+      }
+      if (!body.source?.trim()) return json({ error: "source is required" }, 400);
+
+      const companyName =
+        body.company?.trim() ||
+        (
+          await sql`
+            SELECT name FROM companies
+            WHERE id = ${body.company_id}
+            LIMIT 1
+          `
+        )[0]?.name;
+
+      if (!companyName) return json({ error: "company not found" }, 400);
+
+      const now = Date.now();
 
       const rows = await sql`
         INSERT INTO contacts
-          (first_name,last_name,email,phone,job_title,source,company_id,owner_id,notes)
+          (name,email,company,phone,source,lead_id,company_id,job_title,website,notes,tags,created_at,updated_at)
         VALUES
-          (${body.first_name.trim()},${body.last_name ?? null},${body.email ?? null},
-           ${body.phone ?? null},${body.job_title ?? null},${body.source ?? null},
-           ${body.company_id ?? null},${body.owner_id ?? null},${body.notes ?? null})
+          (${name},${body.email.trim()},${companyName},${body.phone ?? null},
+           ${body.source.trim()},${body.lead_id ?? null},${body.company_id ?? null},
+           ${body.job_title ?? null},${body.website ?? null},${body.notes ?? null},
+           ${body.tags ?? null},${now},${now})
         RETURNING *
       `;
+
       return json({ data: rows[0] }, 201);
     }
 

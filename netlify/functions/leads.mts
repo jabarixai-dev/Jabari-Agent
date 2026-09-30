@@ -6,11 +6,8 @@ export default async function handler(request: Request) {
   try {
     if (request.method === "GET") {
       const rows = await sql`
-        SELECT l.*, c.first_name, c.last_name, co.name AS company_name
-        FROM leads l
-        LEFT JOIN contacts c ON c.id = l.contact_id
-        LEFT JOIN companies co ON co.id = l.company_id
-        ORDER BY l.created_at DESC
+        SELECT * FROM leads
+        ORDER BY created_at DESC
         LIMIT 200
       `;
       return json({ data: rows });
@@ -18,23 +15,42 @@ export default async function handler(request: Request) {
 
     if (request.method === "POST") {
       const body = await readJson<{
-        title: string; contact_id?: string; company_id?: string; owner_id?: string;
-        source?: string; stage?: string; status?: string; score?: number;
-        estimated_value?: number; notes?: string;
+        thread_id?: string;
+        name: string;
+        email: string;
+        company: string;
+        request: string;
+        budget: string;
+        timeline: string;
+        status?: string;
       }>(request);
 
-      if (!body.title?.trim()) return json({ error: "title is required" }, 400);
+      if (!body.thread_id?.trim()) return json({ error: "thread_id is required" }, 400);
+      if (!body.name?.trim()) return json({ error: "name is required" }, 400);
+      if (!body.email?.trim()) return json({ error: "email is required" }, 400);
+      if (!body.company?.trim()) return json({ error: "company is required" }, 400);
+      if (!body.request?.trim()) return json({ error: "request is required" }, 400);
+      if (!body.budget?.trim()) return json({ error: "budget is required" }, 400);
+      if (!body.timeline?.trim()) return json({ error: "timeline is required" }, 400);
+
+      const status = body.status ?? "new";
+
+      if (!["new", "contacted", "qualified", "won", "lost"].includes(status)) {
+        return json({ error: "invalid status" }, 400);
+      }
+
+      const now = Date.now();
 
       const rows = await sql`
         INSERT INTO leads
-          (title,contact_id,company_id,owner_id,source,stage,status,score,estimated_value,notes)
+          (thread_id,name,email,company,request,budget,timeline,status,created_at,updated_at)
         VALUES
-          (${body.title.trim()},${body.contact_id ?? null},${body.company_id ?? null},
-           ${body.owner_id ?? null},${body.source ?? null},${body.stage ?? "new"},
-           ${body.status ?? "open"},${body.score ?? 0},${body.estimated_value ?? null},
-           ${body.notes ?? null})
+          (${body.thread_id.trim()},${body.name.trim()},${body.email.trim()},
+           ${body.company.trim()},${body.request.trim()},${body.budget.trim()},
+           ${body.timeline.trim()},${status},${now},${now})
         RETURNING *
       `;
+
       return json({ data: rows[0] }, 201);
     }
 
