@@ -1,0 +1,101 @@
+JABARI AGENT — V13 BUILD FIX
+
+Current broken build has two causes:
+1. OutreachView.tsx references hooks/types/helpers that only existed inside App.tsx.
+2. InvoiceForm references productId/setProductId without declaring the state.
+
+FILES:
+- Replace src/OutreachView.tsx with the supplied OutreachView.tsx.
+- Apply the App.tsx changes below.
+
+APP.TSX CHANGE 1 — import
+Immediately after:
+  import { useEffect, useMemo, useState, type ReactNode } from "react";
+
+add:
+  import OutreachView from "./OutreachView";
+
+APP.TSX CHANGE 2 — sections
+Change:
+  ..., "Invoices", "Products", "Inbox"
+to:
+  ..., "Invoices", "Products", "Outreach", "Inbox"
+
+APP.TSX CHANGE 3 — type
+Immediately after the Invoice type add:
+  type OutreachDraft = {
+    id:string;
+    lead_id:string;
+    subject:string;
+    body_text:string;
+    status:string;
+    sent_at?:number;
+    created_at:number;
+    updated_at:number;
+    lead_name?:string;
+    lead_email?:string;
+    lead_company?:string;
+    event_count?:number;
+    last_event_type?:string;
+    last_event_at?:number;
+  };
+
+APP.TSX CHANGE 4 — state
+Immediately after:
+  const [products,setProducts] = useState<Product[]>([]);
+
+add:
+  const [outreach,setOutreach] = useState<OutreachDraft[]>([]);
+
+APP.TSX CHANGE 5 — loadAll
+Change the Promise.all destructuring from:
+  ...,productRows]
+to:
+  ...,productRows,outreachRows]
+
+Immediately after the existing:
+  getJson<{data:Product[]}>("/api/products")
+add:
+  getJson<{data:OutreachDraft[]}>("/api/outreach")
+
+Then after:
+  setProducts(productRows.data ?? []);
+
+add:
+  setOutreach(outreachRows.data ?? []);
+
+APP.TSX CHANGE 6 — filtering
+Immediately after filteredProducts add:
+  const filteredOutreach = useMemo(
+    () => filterRows(
+      outreach,
+      search,
+      ["subject","body_text","status","lead_name","lead_email","lead_company","last_event_type"]
+    ),
+    [outreach,search]
+  );
+
+APP.TSX CHANGE 7 — route
+Immediately after the Products route add:
+  {active === "Outreach" && (
+    <OutreachView
+      rows={filteredOutreach}
+      search={search}
+      setSearch={setSearch}
+      leads={leads}
+      onSaved={loadAll}
+    />
+  )}
+
+APP.TSX CHANGE 8 — InvoiceForm
+Inside InvoiceForm, immediately before the existing customerName state declaration, add:
+  const [productId,setProductId]=useState("");
+
+DO NOT modify the database.
+DO NOT create another migration.
+DO NOT upload the old OutreachView.tsx again.
+
+After both files are replaced, make ONE GitHub commit:
+  Fix V13 outreach build integration
+
+That commit should trigger the Netlify deployment automatically.
