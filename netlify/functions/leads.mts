@@ -57,14 +57,22 @@ export default async function handler(request: Request) {
     if (request.method === "PATCH") {
       const body = await request.json().catch(() => ({}));
       const id = String(body.id || "").trim();
-      const status = String(body.status || "").trim();
-      if (!id || !status) return json({ error: "id and status are required" }, 400);
+      if (!id) return json({ error: "id is required" }, 400);
+      const current = await sql`SELECT * FROM leads WHERE id=${id} LIMIT 1`;
+      if (!current.length) return json({ error: "Lead not found" }, 404);
+      const status = body.status !== undefined ? String(body.status).trim() : current[0].status;
       if (!["new", "contacted", "qualified", "won", "lost"].includes(status)) return json({ error: "invalid status" }, 400);
+      const name = body.name !== undefined ? String(body.name).trim() : current[0].name;
+      const email = body.email !== undefined ? String(body.email).trim() : current[0].email;
+      const company = body.company !== undefined ? String(body.company).trim() : current[0].company;
+      const requestText = body.request !== undefined ? String(body.request).trim() : current[0].request;
+      const budget = body.budget !== undefined ? String(body.budget).trim() : current[0].budget;
+      const timeline = body.timeline !== undefined ? String(body.timeline).trim() : current[0].timeline;
+      if (!name || !email || !company || !requestText || !budget || !timeline) return json({ error: "name, email, company, request, budget and timeline are required" }, 400);
       const rows = await sql`
-        UPDATE leads SET status=${status}, updated_at=${Date.now()} WHERE id=${id}
+        UPDATE leads SET name=${name}, email=${email}, company=${company}, request=${requestText}, budget=${budget}, timeline=${timeline}, status=${status}, updated_at=${Date.now()} WHERE id=${id}
         RETURNING *
       `;
-      if (!rows.length) return json({ error: "Lead not found" }, 404);
       return json({ data: rows[0] });
     }
 
